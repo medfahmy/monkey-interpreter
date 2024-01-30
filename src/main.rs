@@ -1,14 +1,30 @@
-use monkey::Lexer;
+use std::io::{stdin, stdout, Write};
+use monkey::{Lexer, Token};
 
 
 fn main() {
-    let input = "let fi_ve = 5;";
-    dbg!(input);
+    let stdin = stdin();
+    let mut stdout = stdout();
 
-    let mut lexer = Lexer::new(input);
+    let prompt = ">> ";
 
-    for _ in 0..8 {
-        // dbg!(&lexer);
-        dbg!(lexer.next());
+    loop {
+        print!("{}", prompt);
+        stdout.flush().unwrap();
+
+        let mut buf = String::new();
+        stdin.read_line(&mut buf).unwrap();
+
+        println!("");
+
+        let mut lexer = Lexer::new(&buf);
+        let mut token = lexer.next();
+
+        while token != Token::Eof {
+            println!("{:?}", token);
+            token = lexer.next();
+        }
+
+        println!("");
     }
 }
