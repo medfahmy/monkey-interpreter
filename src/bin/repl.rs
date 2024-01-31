@@ -21,7 +21,7 @@ fn main() {
         let mut parser = Parser::new(lexer);
         let program = parser.parse();
 
-        let errors = parser.errs;
+        let errors = parser.errors();
 
         // todo: impl Display for Parser and Program
         
