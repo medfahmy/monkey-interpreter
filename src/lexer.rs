@@ -1,60 +1,19 @@
-use std::fmt::Display;
-
-#[derive(Debug, PartialEq)]
-pub enum Token<'a> {
-    // keywords
-    Let,
-    Fn,
-    If,
-    Else,
-    Return,
-    True,
-    False,
-
-    Ident(&'a str),
-
-    // data types
-    Int(i64),
-    // Float(f64),
-
-    // keywords
-    Assign,
-    Plus,
-    Minus,
-    Bang,
-    Asterisk,
-    Slash,
-    Eq,
-    NotEq,
-    Lt,
-    Gt,
-
-    // symbols
-    Semicolon,
-    Comma,
-    Lparen,
-    Rparen,
-    Lbrace,
-    Rbrace,
-
-    Illegal,
-    Eof,
-}
+use crate::Token;
 
 #[derive(Debug)]
-pub struct Lexer<'a> {
-    input: &'a str,
-    position: usize,
-    read_position: usize,
+pub struct Lexer {
+    input: String,
+    curr_pos: usize,
+    peek_pos: usize,
     curr: char,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self {
+impl Lexer {
+    pub fn new(input: String) -> Self {
         let mut lexer = Self {
             input,
-            position: 0,
-            read_position: 0,
+            curr_pos: 0,
+            peek_pos: 0,
             curr: '\0',
         };
 
@@ -112,25 +71,25 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_char(&mut self) {
-        if self.read_position >= self.input.len() {
+        if self.peek_pos >= self.input.len() {
             self.curr = '\0';
         } else {
             // todo: handle error
-            self.curr = self.input.chars().nth(self.read_position).unwrap();
+            self.curr = self.input.chars().nth(self.peek_pos).unwrap();
         }
 
-        self.position = self.read_position;
-        self.read_position += 1;
+        self.curr_pos = self.peek_pos;
+        self.peek_pos += 1;
     }
 
     fn read_ident(&mut self) -> Token {
-        let position = self.position;
+        let position = self.curr_pos;
 
         while self.curr.is_alphabetic() || self.curr == '_' {
             self.read_char();
         }
 
-        let s = &self.input[position..self.position];
+        let s = &self.input[position..self.curr_pos];
 
         use Token::*;
 
@@ -142,18 +101,18 @@ impl<'a> Lexer<'a> {
             "return" => Return,
             "true" => True,
             "false" => False,
-            s => Ident(s),
+            s => Ident(s.to_string()),
         }
     }
 
     fn read_number(&mut self) -> Token {
-        let position = self.position;
+        let position = self.curr_pos;
 
         while self.curr.is_ascii_digit() {
             self.read_char();
         }
 
-        let num = &self.input[position..self.position];
+        let num = &self.input[position..self.curr_pos];
 
         Token::Int(num.parse().unwrap())
     }
@@ -165,10 +124,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn peek_char(&self) -> char {
-        if self.read_position >= self.input.len() {
+        if self.peek_pos >= self.input.len() {
             '\0'
         } else {
-            self.input.chars().nth(self.read_position).unwrap()
+            self.input.chars().nth(self.peek_pos).unwrap()
         }
     }
 }
@@ -222,7 +181,7 @@ mod tests {
     use Token::*;
 
     fn lex_test(input: &str, tokens: Vec<Token>) {
-        let mut lexer = Lexer::new(input);
+        let mut lexer = Lexer::new(input.to_string());
 
         for expected_token in tokens {
             let token = lexer.next();
@@ -245,12 +204,12 @@ mod tests {
         let input = "let five = 5; let ten = 10;";
         let tokens = vec![
             Let,
-            Ident("five"),
+            Ident("five".to_string()),
             Assign,
             Int(5),
             Semicolon,
             Let,
-            Ident("ten"),
+            Ident("ten".to_string()),
             Assign,
             Int(10),
             Semicolon,
@@ -269,29 +228,29 @@ mod tests {
 
         let tokens = vec![
             Let,
-            Ident("add"),
+            Ident("add".to_string()),
             Assign,
             Fn,
             Lparen,
-            Ident("x"),
+            Ident("x".to_string()),
             Comma,
-            Ident("y"),
+            Ident("y".to_string()),
             Rparen,
             Lbrace,
-            Ident("x"),
+            Ident("x".to_string()),
             Plus,
-            Ident("y"),
+            Ident("y".to_string()),
             Semicolon,
             Rbrace,
             Semicolon,
             Let,
-            Ident("result"),
+            Ident("result".to_string()),
             Assign,
-            Ident("add"),
+            Ident("add".to_string()),
             Lparen,
-            Ident("five"),
+            Ident("five".to_string()),
             Comma,
-            Ident("ten"),
+            Ident("ten".to_string()),
             Rparen,
             Semicolon,
             Eof,
