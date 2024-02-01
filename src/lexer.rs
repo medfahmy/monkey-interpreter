@@ -114,7 +114,7 @@ impl Lexer {
 
         let num = &self.input[position..self.curr_pos];
 
-        Token::Int(num.parse().unwrap())
+        Token::Int(num.to_string())
     }
 
     fn skip_whitespace(&mut self) {
@@ -206,12 +206,12 @@ mod tests {
             Let,
             Ident("five".to_string()),
             Assign,
-            Int(5),
+            Int("5".to_string()),
             Semicolon,
             Let,
             Ident("ten".to_string()),
             Assign,
-            Int(10),
+            Int("10".to_string()),
             Semicolon,
             Eof,
         ];
@@ -271,21 +271,21 @@ mod tests {
             Minus,
             Slash,
             Asterisk,
-            Int(5),
+            Int("5".to_string()),
             Semicolon,
-            Int(5),
+            Int("5".to_string()),
             Lt,
-            Int(10),
+            Int("10".to_string()),
             Gt,
-            Int(5),
+            Int("5".to_string()),
             Semicolon,
-            Int(10),
+            Int("10".to_string()),
             Eq,
-            Int(10),
+            Int("10".to_string()),
             Semicolon,
-            Int(10),
+            Int("10".to_string()),
             NotEq,
-            Int(9),
+            Int("9".to_string()),
             Semicolon,
             Eof,
         ];
@@ -303,9 +303,9 @@ mod tests {
         let tokens = vec![
             If,
             Lparen,
-            Int(5),
+            Int("5".to_string()),
             Lt,
-            Int(10),
+            Int("10".to_string()),
             Rparen,
             Lbrace,
             Return,

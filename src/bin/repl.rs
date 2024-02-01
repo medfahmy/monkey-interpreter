@@ -15,7 +15,7 @@ fn main() {
         let mut buf = String::new();
         stdin.read_line(&mut buf).unwrap();
 
-        println!("");
+        println!();
 
         let lexer = Lexer::new(buf);
         let mut parser = Parser::new(lexer);
@@ -23,14 +23,12 @@ fn main() {
 
         let errors = parser.errors();
 
-        // todo: impl Display for Parser and Program
-        
-        if errors.len() > 0 {
+        if !errors.is_empty() {
             println!("errors: {:?}", errors);
         } else {
             println!("{:?}", program);
         }
 
-        println!("");
+        println!();
     }
 }

@@ -8,14 +8,8 @@ pub enum Token {
     Return,
     True,
     False,
-
     Ident(String),
-
-    // data types
-    Int(i64),
-    // Float(f64),
-
-    // keywords
+    Int(String),
     Assign,
     Plus,
     Minus,
@@ -26,15 +20,50 @@ pub enum Token {
     NotEq,
     Lt,
     Gt,
-
-    // symbols
     Semicolon,
     Comma,
     Lparen,
     Rparen,
     Lbrace,
     Rbrace,
-
     Illegal,
     Eof,
+}
+
+impl ToString for Token {
+    fn to_string(&self) -> String { 
+        use Token::*;
+
+        let s = match self {
+            Let => "let",
+            Fn => "fn",
+            If => "if",
+            Else => "else",
+            Return => "return",
+            True => "true",
+            False => "false",
+            Ident(s) => s,
+            Int(s) => s,
+            Assign => "=",
+            Plus => "+",
+            Minus => "-",
+            Bang => "!",
+            Asterisk => "*",
+            Slash => "/",
+            Eq => "==",
+            NotEq => "!=",
+            Lt => "<",
+            Gt => ">",
+            Semicolon => ";",
+            Comma => ",",
+            Lparen => "(",
+            Rparen => ")",
+            Lbrace => "{",
+            Rbrace => "}",
+            Eof => "",
+            Illegal => "",
+        };
+
+        s.to_string()
+    }
 }
