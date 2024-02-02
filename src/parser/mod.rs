@@ -1,50 +1,48 @@
-use crate::ast::{Expr, Stmt};
-use crate::{Lexer, Program, Token};
+#[allow(warnings, unused)]
+
+mod token;
+mod lexer;
+mod ast;
+
+use token::Token;
+use lexer::Lexer;
+use ast::{Program, Stmt, Expr};
 
 #[derive(Debug)]
 pub struct Parser {
     lexer: Lexer,
+    program: Program,
     curr_token: Token,
     peek_token: Token,
-    errors: Vec<String>,
 }
 
 impl Parser {
-    pub fn new(lexer: Lexer) -> Parser {
+    pub fn parse(input: &str) -> Program {
+        let lexer = Lexer::new(input);
         let mut parser = Parser {
             lexer,
             curr_token: Token::Eof,
             peek_token: Token::Eof,
-            errors: Vec::new(),
+            program: Program::new(),
         };
 
         parser.next_token();
         parser.next_token();
 
-        parser
+        while parser.curr_token != Token::Eof {
+            if let Some(stmt) = parser.parse_stmt() {
+                parser.program.push_stmt(stmt);
+            }
+
+            parser.next_token();
+        }
+
+        parser.program
     }
 
     fn next_token(&mut self) {
         self.curr_token = self.peek_token.clone();
         self.peek_token = self.lexer.next();
-    }
-
-    pub fn parse(&mut self) -> Program {
-        let mut program = Program::new();
-
-        while self.curr_token != Token::Eof {
-            if let Some(stmt) = self.parse_stmt() {
-                program.push_stmt(stmt);
-            }
-
-            self.next_token();
-        }
-
-        program
-    }
-
-    pub fn errors(&self) -> &Vec<String> {
-        &self.errors
     }
 
     fn parse_stmt(&mut self) -> Option<Stmt> {
@@ -60,22 +58,38 @@ impl Parser {
             self.next_token();
 
             if let Token::Assign = self.peek_token {
-                while self.curr_token != Token::Semicolon {
-                    self.next_token();
-                }
+                self.next_token();
+                self.next_token();
 
-                Some(Stmt::Let(Expr::Ident(name.clone()), Expr::Value))
+                let stmt = self.parse_expr_stmt()?;
+
+                // while self.curr_token != Token::Semicolon {
+                //     self.next_token();
+                // }
+
+                if let Stmt::Expr(expr) = stmt {
+                    Some(Stmt::Let(Expr::Ident(name), expr))
+                } else {
+                    self.program.push_error(format!(
+                        "expected expression, got {} instead",
+                        stmt.to_string()
+                    ));
+                    None
+                }
             } else {
-                self.errors.push(format!(
+                self.program.push_error(format!(
                     "expected Assign, got {:?} instead",
                     self.peek_token
                 ));
 
+                while self.curr_token != Token::Semicolon {
+                    self.next_token();
+                }
+
                 None
             }
         } else {
-            self.errors
-                .push(format!("expected Ident, got {:?} instead", self.peek_token));
+            self.program.push_error(format!("expected Ident, got {:?} instead", self.peek_token));
 
             None
         }
@@ -84,11 +98,27 @@ impl Parser {
     fn parse_ret_stmt(&mut self) -> Option<Stmt> {
         self.next_token();
 
-        while self.curr_token != Token::Semicolon {
-            self.next_token();
+        if let Token::Semicolon = self.curr_token {
+            self.program.push_error("missing return value".to_string());
+            return None;
         }
 
-        Some(Stmt::Ret(Expr::Value))
+        let stmt = self.parse_expr_stmt()?;
+
+
+        // while self.curr_token != Token::Semicolon {
+        //     self.next_token();
+        // }
+
+        if let Stmt::Expr(expr) = stmt {
+            Some(Stmt::Ret(expr))
+        } else {
+            self.program.push_error(format!(
+                "expected expression, got {} instead",
+                stmt.to_string()
+            ));
+            None
+        }
     }
 
     fn parse_expr_stmt(&mut self) -> Option<Stmt> {
@@ -119,7 +149,7 @@ impl Parser {
                 match res {
                     Ok(i) => Some(Expr::Int(i)),
                     Err(_) => {
-                        self.errors.push(format!("could not parse {} as int", n));
+                        self.program.push_error(format!("could not parse {} as int", n));
                         None
                     }
                 }
@@ -134,51 +164,47 @@ impl Parser {
         }
     }
 
-    fn infix_parse(&self, token: &Token) -> Option<Expr> {
+    fn infix_parse(&self) -> Option<Expr> {
         todo!()
     }
 
     fn no_prefix_error(&mut self) {
-        self.errors
-            .push(format!("unable to parse prefix {:?}", self.curr_token));
+        self.program.push_error(
+            format!("unable to parse prefix {:?}", self.curr_token));
     }
 }
 
 enum Prec {
     Low = 0,
-    Eq = 1,   // ==
-    Lg = 2,   // <, >
-    Sum = 3,  // +
-    Prod = 4, // *
-    Prefix = 5,  // -x, !x
-    Call = 6, // foo(x)
+    Eq = 1,     // ==
+    Lg = 2,     // <, >
+    Sum = 3,    // +
+    Prod = 4,   // *
+    Prefix = 5, // -x, !x
+    Call = 6,   // foo(x)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        ast::{Expr, Stmt},
-        Lexer,
-    };
 
     fn parse_test(input: &str, exp_stmts_nr: usize, exp_errors_nr: usize) -> Vec<Stmt> {
-        let lexer = Lexer::new(input.to_string());
-        let mut parser = Parser::new(lexer);
-        let program = parser.parse();
+        let program = Parser::parse(input);
         let stmts = program.stmts();
-        let errors = parser.errors();
+        let errors = program.errors();
 
         assert_eq!(
             stmts.len(),
             exp_stmts_nr,
-            "num of stmts, stmts = {:?}",
+            "input: {}, num of stmts, stmts = {:?}",
+            input,
             stmts
         );
         assert_eq!(
             errors.len(),
             exp_errors_nr,
-            "num of errors, errors = {:?}",
+            "input: {}, num of errors, errors = {:?}",
+            input,
             errors
         );
 
@@ -212,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    // #[ignore]
     fn errors() {
         let input = r#"let x 69;
             let = 420;
@@ -286,5 +312,24 @@ mod tests {
     fn prefix_expr() {
         prefix_expr_test("!5", Token::Bang, 5);
         prefix_expr_test("-15", Token::Minus, 15);
+    }
+
+    #[test]
+    fn infix_expr() {
+        let inputs = [
+            "5 + 5;",
+            "5 - 5;",
+            "5 * 5;",
+            "5 / 5;",
+            "5 < 5;",
+            "5 > 5;",
+            "5 == 5;",
+            "5 != 5;",
+        ];
+        let ops = ["+", "-", "*", "/", "<", ">", "==", "!="];
+
+        for i in 0..inputs.len() {
+            let parser = Parser::parse(inputs[i]);
+        }
     }
 }

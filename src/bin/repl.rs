@@ -1,5 +1,5 @@
 use std::io::{stdin, stdout, Write};
-use monkey::{Lexer, Parser};
+use monkey::Parser;
 
 
 fn main() {
@@ -17,11 +17,9 @@ fn main() {
 
         println!();
 
-        let lexer = Lexer::new(buf);
-        let mut parser = Parser::new(lexer);
-        let program = parser.parse();
+        let program = Parser::parse(&buf);
 
-        let errors = parser.errors();
+        let errors = program.errors();
 
         if !errors.is_empty() {
             println!("errors: {:?}", errors);

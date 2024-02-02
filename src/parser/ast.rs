@@ -1,21 +1,33 @@
-use crate::Token;
+use super::token::Token;
 
 #[derive(Debug)]
 pub struct Program {
     stmts: Vec<Stmt>,
+    errors: Vec<String>,
 }
 
 impl Program {
     pub fn new() -> Self {
-        Self { stmts: Vec::new() }
+        Self { 
+            stmts: Vec::new(),
+            errors: Vec::new(),
+        }
     }
 
     pub fn stmts(&self) -> &Vec<Stmt> {
         &self.stmts
     }
 
+    pub fn errors(&self) -> &Vec<String> {
+        &self.errors
+    }
+
     pub fn push_stmt(&mut self, stmt: Stmt) {
         self.stmts.push(stmt);
+    }
+
+    pub fn push_error(&mut self, error: String) {
+        self.errors.push(error);
     }
 }
 
@@ -55,6 +67,7 @@ pub enum Expr {
     Ident(String),
     Int(i64),
     Prefix(Token, Box<Expr>),
+    Infix(Token, Box<Expr>, Box<Expr>),
     Value,
 }
 
@@ -66,6 +79,9 @@ impl ToString for Expr {
             Expr::Prefix(op, expr) => {
                 format!("({}{})", op.to_string(), expr.to_string())
             }
+            Expr::Infix(op, l, r) => {
+                format!("({}{}{})", l.to_string(), op.to_string(), r.to_string())
+            },
             Expr::Value => unimplemented!(),
         }
     }
@@ -82,6 +98,7 @@ mod tests {
                 Expr::Ident("a".to_string()),
                 Expr::Ident("b".to_string()),
             )],
+            errors: vec![],
         };
 
         assert_eq!(program.to_string(), "let a = b;".to_string());

@@ -1,4 +1,4 @@
-use crate::Token;
+use super::token::Token;
 
 #[derive(Debug)]
 pub struct Lexer {
@@ -9,9 +9,9 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(input: String) -> Self {
+    pub fn new(input: &str) -> Self {
         let mut lexer = Self {
-            input,
+            input: input.to_string(),
             curr_pos: 0,
             peek_pos: 0,
             curr: '\0',
@@ -25,6 +25,7 @@ impl Lexer {
         self.skip_whitespace();
 
         use Token::*;
+
         let token = match self.curr {
             '\0' => Eof,
             '=' => {
@@ -181,7 +182,7 @@ mod tests {
     use Token::*;
 
     fn lex_test(input: &str, tokens: Vec<Token>) {
-        let mut lexer = Lexer::new(input.to_string());
+        let mut lexer = Lexer::new(input);
 
         for expected_token in tokens {
             let token = lexer.next();
