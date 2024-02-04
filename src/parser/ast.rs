@@ -8,7 +8,7 @@ pub struct Program {
 
 impl Program {
     pub fn new() -> Self {
-        Self { 
+        Self {
             stmts: Vec::new(),
             errors: Vec::new(),
         }
@@ -68,7 +68,7 @@ pub enum Expr {
     Int(i64),
     Prefix(Token, Box<Expr>),
     Infix(Token, Box<Expr>, Box<Expr>),
-    Value,
+    Call(String, Vec<Expr>),
 }
 
 impl ToString for Expr {
@@ -80,9 +80,18 @@ impl ToString for Expr {
                 format!("({}{})", op.to_string(), expr.to_string())
             }
             Expr::Infix(op, l, r) => {
-                format!("({}{}{})", l.to_string(), op.to_string(), r.to_string())
-            },
-            Expr::Value => unimplemented!(),
+                format!("({} {} {})", l.to_string(), op.to_string(), r.to_string())
+            }
+            Expr::Call(func, args) => {
+                format!(
+                    "{}({})",
+                    func,
+                    args.iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
         }
     }
 }

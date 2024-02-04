@@ -1,12 +1,10 @@
-#[allow(warnings, unused)]
-
-mod token;
-mod lexer;
 mod ast;
+mod lexer;
+mod token;
 
-use token::Token;
+use ast::{Expr, Program, Stmt};
 use lexer::Lexer;
-use ast::{Program, Stmt, Expr};
+use token::Token;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -60,19 +58,19 @@ impl Parser {
             if let Token::Assign = self.peek_token {
                 self.next_token();
                 self.next_token();
+                let stmt = self.parse_expr_stmt();
 
-                let stmt = self.parse_expr_stmt()?;
+                if stmt.is_none() {
+                    self.program.push_error(format!("missing right value in let statement"));
+                    return None;
+                }
 
-                // while self.curr_token != Token::Semicolon {
-                //     self.next_token();
-                // }
-
-                if let Stmt::Expr(expr) = stmt {
-                    Some(Stmt::Let(Expr::Ident(name), expr))
+                if let Stmt::Expr(expr) = stmt.as_ref().unwrap() {
+                    Some(Stmt::Let(Expr::Ident(name), expr.clone()))
                 } else {
                     self.program.push_error(format!(
                         "expected expression, got {} instead",
-                        stmt.to_string()
+                        stmt.unwrap().to_string()
                     ));
                     None
                 }
@@ -89,8 +87,10 @@ impl Parser {
                 None
             }
         } else {
-            self.program.push_error(format!("expected Ident, got {:?} instead", self.peek_token));
-
+            self.program.push_error(
+                format!("expected Ident, got {:?} instead", 
+                self.peek_token)
+            );
             None
         }
     }
@@ -104,11 +104,6 @@ impl Parser {
         }
 
         let stmt = self.parse_expr_stmt()?;
-
-
-        // while self.curr_token != Token::Semicolon {
-        //     self.next_token();
-        // }
 
         if let Stmt::Expr(expr) = stmt {
             Some(Stmt::Ret(expr))
@@ -132,12 +127,23 @@ impl Parser {
     }
 
     fn parse_expr(&mut self, prec: Prec) -> Option<Expr> {
-        match self.prefix_parse() {
-            Some(expr) => Some(expr),
-            None => {
-                self.no_prefix_error();
-                None
+        if let Some(mut left) = self.prefix_parse() {
+            while self.peek_token != Token::Semicolon
+                && (prec as usize) < (self.peek_prec() as usize)
+            {
+                self.next_token();
+
+                if let Some(right) = self.infix_parse(&left) {
+                    left = right;
+                } else {
+                    return Some(left);
+                }
             }
+
+            Some(left)
+        } else {
+            self.no_prefix_error();
+            None
         }
     }
 
@@ -149,7 +155,8 @@ impl Parser {
                 match res {
                     Ok(i) => Some(Expr::Int(i)),
                     Err(_) => {
-                        self.program.push_error(format!("could not parse {} as int", n));
+                        self.program
+                            .push_error(format!("could not parse {} as int", n));
                         None
                     }
                 }
@@ -164,16 +171,41 @@ impl Parser {
         }
     }
 
-    fn infix_parse(&self) -> Option<Expr> {
-        todo!()
+    fn infix_parse(&mut self, left: &Expr) -> Option<Expr> {
+        match &self.curr_token {
+            Token::Asterisk
+            | Token::Slash
+            | Token::Plus
+            | Token::Minus
+            | Token::Eq
+            | Token::NotEq
+            | Token::Lt
+            | Token::Gt => {
+                let token = self.curr_token.clone();
+                let prec = self.curr_prec();
+                self.next_token();
+                let right = self.parse_expr(prec)?;
+                Some(Expr::Infix(token, Box::new(left.clone()), Box::new(right)))
+            }
+            _ => None,
+        }
     }
 
     fn no_prefix_error(&mut self) {
-        self.program.push_error(
-            format!("unable to parse prefix {:?}", self.curr_token));
+        let error = format!("unable to parse prefix {:?}", self.curr_token);
+        self.program.push_error(error);
+    }
+
+    fn peek_prec(&mut self) -> Prec {
+        Prec::from(&self.peek_token)
+    }
+
+    fn curr_prec(&mut self) -> Prec {
+        Prec::from(&self.curr_token)
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 enum Prec {
     Low = 0,
     Eq = 1,     // ==
@@ -182,6 +214,22 @@ enum Prec {
     Prod = 4,   // *
     Prefix = 5, // -x, !x
     Call = 6,   // foo(x)
+}
+
+impl From<&Token> for Prec {
+    fn from(token: &Token) -> Self {
+        match token {
+            Token::Eq => Self::Eq,
+            Token::NotEq => Self::Eq,
+            Token::Lt => Self::Lg,
+            Token::Gt => Self::Lg,
+            Token::Plus => Self::Sum,
+            Token::Minus => Self::Sum,
+            Token::Slash => Self::Prod,
+            Token::Asterisk => Self::Prod,
+            _ => Self::Low,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -212,9 +260,8 @@ mod tests {
     }
 
     fn let_test(stmt: &Stmt, name: String) {
-        if let Stmt::Let(ident, value) = stmt {
+        if let Stmt::Let(ident, _) = stmt {
             assert_eq!(ident, &Expr::Ident(name.clone()));
-            assert_eq!(value, &Expr::Value);
         } else {
             panic!("stmt is not let: {:?}", &stmt);
         }
@@ -317,19 +364,74 @@ mod tests {
     #[test]
     fn infix_expr() {
         let inputs = [
-            "5 + 5;",
-            "5 - 5;",
-            "5 * 5;",
-            "5 / 5;",
-            "5 < 5;",
-            "5 > 5;",
-            "5 == 5;",
-            "5 != 5;",
+            "5 + 5;", "5 - 5;", "5 * 5;", "5 / 5;", "5 < 5;", "5 > 5;", "5 == 5;", "5 != 5;",
         ];
         let ops = ["+", "-", "*", "/", "<", ">", "==", "!="];
 
         for i in 0..inputs.len() {
-            let parser = Parser::parse(inputs[i]);
+            let stmt = parse_test(inputs[i], 1, 0)[0].clone();
+
+            if let Stmt::Expr(expr) = stmt {
+                if let Expr::Infix(token, l, r) = expr {
+                    assert_eq!(token.to_string(), ops[i].to_string());
+
+                    match (*l.clone(), *r.clone()) {
+                        (Expr::Int(5), Expr::Int(5)) => {}
+                        _ => panic!("incorrect operands: {}, {}", l.to_string(), r.to_string()),
+                    }
+                }
+            } else {
+                panic!("stmt is not expr: {:?}", stmt);
+            }
+        }
+    }
+
+    #[test]
+    fn infix_many() {
+        let tests = [
+            ["-a * b", "((-a) * b)"],
+            ["!-a", "(!(-a))"],
+            ["a + b + c", "((a + b) + c)"],
+            ["a + b - c", "((a + b) - c)"],
+            ["a * b * c", "((a * b) * c)"],
+            ["a * b / c", "((a * b) / c)"],
+            ["a + b / c", "(a + (b / c))"],
+            ["a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"],
+            ["5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"],
+            ["5 < 4 != 3 > 4", "((5 < 4) != (3 > 4))"],
+            [
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ],
+            [
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ],
+        ];
+
+        for test in tests {
+            let stmts = parse_test(test[0], 1, 0);
+            assert_eq!(stmts[0].to_string(), test[1].to_string());
+        }
+    }
+
+    #[test]
+    fn infix_fn_call() {
+        let input = "add(1, 2)";
+        let stmts = parse_test(input, 1, 0);
+
+        if let Stmt::Expr(Expr::Call(fn_name, args)) = stmts[0].clone() {
+            assert_eq!(fn_name, "add".to_string());
+
+            match args[0] {
+                Expr::Int(1) => {},
+                _ => panic!("incorrect expr: {}", args[0].to_string()),
+            }
+
+            match args[1] {
+                Expr::Int(2) => {},
+                _ => panic!("incorrect expr: {}", args[1].to_string()),
+            }
         }
     }
 }
