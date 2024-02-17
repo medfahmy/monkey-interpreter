@@ -58,12 +58,14 @@ impl Parser {
             if let Token::Assign = self.peek_token {
                 self.next_token();
                 self.next_token();
-                let stmt = self.parse_expr_stmt();
 
-                if stmt.is_none() {
+
+                if self.curr_token == Token::Semicolon {
                     self.program.push_error(format!("missing right value in let statement"));
                     return None;
                 }
+
+                let stmt = self.parse_expr_stmt();
 
                 if let Stmt::Expr(expr) = stmt.as_ref().unwrap() {
                     Some(Stmt::Let(Expr::Ident(name), expr.clone()))
@@ -127,6 +129,8 @@ impl Parser {
     }
 
     fn parse_expr(&mut self, prec: Prec) -> Option<Expr> {
+        println!("begin {:?}", self.curr_token);
+
         if let Some(mut left) = self.prefix_parse() {
             while self.peek_token != Token::Semicolon
                 && (prec as usize) < (self.peek_prec() as usize)
@@ -140,6 +144,8 @@ impl Parser {
                 }
             }
 
+            println!("parsed {:?}", left);
+            println!("end {:?}", self.curr_token);
             Some(left)
         } else {
             self.no_prefix_error();
@@ -149,6 +155,7 @@ impl Parser {
 
     fn prefix_parse(&mut self) -> Option<Expr> {
         match &self.curr_token {
+            Token::Lparen => self.parse_grouped_expr(),
             Token::Ident(ident) => Some(Expr::Ident(ident.clone())),
             Token::Int(n) => {
                 let res = n.parse();
@@ -161,6 +168,8 @@ impl Parser {
                     }
                 }
             }
+            Token::True => Some(Expr::Bool(true)),
+            Token::False => Some(Expr::Bool(false)),
             Token::Bang | Token::Minus => {
                 let op = self.curr_token.clone();
                 self.next_token();
@@ -191,16 +200,31 @@ impl Parser {
         }
     }
 
+    fn parse_grouped_expr(&mut self) -> Option<Expr> {
+        println!("begin grouped {:?}", self.curr_token);
+        self.next_token();
+        let expr = self.parse_expr(Prec::Low);
+
+        if self.peek_token != Token::Rparen {
+            self.next_token();
+            return None;
+        }
+
+        self.next_token();
+        println!("end grouped {:?}", self.curr_token);
+        expr
+    }
+
     fn no_prefix_error(&mut self) {
         let error = format!("unable to parse prefix {:?}", self.curr_token);
         self.program.push_error(error);
     }
 
-    fn peek_prec(&mut self) -> Prec {
+    fn peek_prec(&self) -> Prec {
         Prec::from(&self.peek_token)
     }
 
-    fn curr_prec(&mut self) -> Prec {
+    fn curr_prec(&self) -> Prec {
         Prec::from(&self.curr_token)
     }
 }

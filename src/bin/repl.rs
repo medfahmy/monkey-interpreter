@@ -18,13 +18,14 @@ fn main() {
         println!();
 
         let program = Parser::parse(&buf);
-
         let errors = program.errors();
 
         if !errors.is_empty() {
             println!("errors: {:?}", errors);
         } else {
             println!("{:?}", program);
+            println!();
+            println!("{}", program.to_string());
         }
 
         println!();

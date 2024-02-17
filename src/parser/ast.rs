@@ -33,11 +33,14 @@ impl Program {
 
 impl ToString for Program {
     fn to_string(&self) -> String {
-        self.stmts
+        let stmts = self
+            .stmts
             .iter()
             .map(|stmt| stmt.to_string())
             .collect::<Vec<_>>()
-            .join("")
+            .join("");
+
+        stmts
     }
 }
 
@@ -46,6 +49,7 @@ pub enum Stmt {
     Let(Expr, Expr),
     Ret(Expr),
     Expr(Expr),
+    Block(Vec<Stmt>),
 }
 
 impl ToString for Stmt {
@@ -58,6 +62,11 @@ impl ToString for Stmt {
                 format!("return {};", value.to_string())
             }
             Self::Expr(expr) => expr.to_string(),
+            Self::Block(stmts) => stmts
+                .iter()
+                .map(|stmt| stmt.to_string())
+                .collect::<Vec<_>>()
+                .join(""),
         }
     }
 }
@@ -66,23 +75,38 @@ impl ToString for Stmt {
 pub enum Expr {
     Ident(String),
     Int(i64),
+    Bool(bool),
     Prefix(Token, Box<Expr>),
     Infix(Token, Box<Expr>, Box<Expr>),
+    If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     Call(String, Vec<Expr>),
 }
 
 impl ToString for Expr {
     fn to_string(&self) -> String {
         match self {
-            Expr::Ident(name) => name.to_string(),
-            Expr::Int(n) => n.to_string(),
-            Expr::Prefix(op, expr) => {
+            Self::Ident(name) => name.to_string(),
+            Self::Int(n) => n.to_string(),
+            Self::Prefix(op, expr) => {
                 format!("({}{})", op.to_string(), expr.to_string())
             }
-            Expr::Infix(op, l, r) => {
+            Self::Infix(op, l, r) => {
                 format!("({} {} {})", l.to_string(), op.to_string(), r.to_string())
             }
-            Expr::Call(func, args) => {
+            Self::Bool(b) => b.to_string(),
+            Self::If(cond, conseq, alt) => {
+                format!(
+                    "if {} {} {})",
+                    cond.to_string(),
+                    conseq.to_string(),
+                    if let Some(alt) = alt {
+                        format!("else {}", alt.to_string())
+                    } else {
+                        "".to_string()
+                    },
+                )
+            }
+            Self::Call(func, args) => {
                 format!(
                     "{}({})",
                     func,
