@@ -133,49 +133,6 @@ impl Lexer {
     }
 }
 
-// impl<'a> Iterator for Lexer<'a> {
-//     type Item = Token<'a>;
-//
-//     fn next(&mut self) -> Option<Self::Item> {
-//         self.skip_whitespace();
-//
-//         if self.curr == '\0' {
-//             return None;
-//         }
-//
-//         use Token::*;
-//         let token = match self.curr {
-//             '=' => Assign,
-//             '+' => Plus,
-//             '(' => Lparen,
-//             ')' => Rparen,
-//             '{' => Lbrace,
-//             '}' => Rbrace,
-//             ';' => Semicolon,
-//             ',' => Comma,
-//             '-' => Minus,
-//             '!' => Bang,
-//             '*' => Asterisk,
-//             '/' => Slash,
-//             '<' => Lt,
-//             '>' => Gt,
-//             _ => {
-//
-//                 if self.curr.is_alphabetic() || self.curr == '_' {
-//                     return Some(self.read_ident());
-//                 } else if self.curr.is_ascii_digit() {
-//                     return Some(self.read_number());
-//                 } else {
-//                     Illegal
-//                 }
-//             },
-//         };
-//
-//         self.read_char();
-//         Some(token)
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
