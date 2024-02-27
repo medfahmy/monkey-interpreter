@@ -95,16 +95,17 @@ impl ToString for Expr {
             }
             Self::Bool(b) => b.to_string(),
             Self::If(cond, conseq, alt) => {
-                format!(
-                    "if {} {} {})",
+                let mut output = format!(
+                    "if {} {{ {} }}",
                     cond.to_string(),
                     conseq.to_string(),
-                    if let Some(alt) = alt {
-                        format!("else {}", alt.to_string())
-                    } else {
-                        "".to_string()
-                    },
-                )
+                ); 
+
+                if let Some(alt) = alt {
+                    output.push_str(&format!("else {{{}}}", alt.to_string()));
+                }
+
+                output
             }
             Self::Call(func, args) => {
                 format!(
