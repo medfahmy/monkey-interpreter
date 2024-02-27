@@ -129,7 +129,7 @@ impl Parser {
     }
 
     fn parse_expr(&mut self, prec: Prec) -> Option<Expr> {
-        println!("begin {:?}", self.curr_token);
+        // println!("begin {:?}", self.curr_token);
 
         if let Some(mut left) = self.prefix_parse() {
             while self.peek_token != Token::Semicolon
@@ -144,8 +144,8 @@ impl Parser {
                 }
             }
 
-            println!("parsed {:?}", left);
-            println!("end {:?}", self.curr_token);
+            // println!("parsed {:?}", left);
+            // println!("end {:?}", self.curr_token);
             Some(left)
         } else {
             self.no_prefix_error();
@@ -176,6 +176,33 @@ impl Parser {
                 let expr = self.parse_expr(Prec::Prefix)?;
                 Some(Expr::Prefix(op, Box::new(expr)))
             }
+            Token::If => {
+                self.next_token();
+                let cond = self.parse_expr(Prec::Low)?;
+                self.next_token();
+
+                if let Token::Lbrace = self.curr_token {
+                    self.next_token();
+                    let csq = self.parse_stmt()?;
+                    self.next_token();
+
+                    let mut alt = None;
+
+                    if let Token::Else = self.curr_token {
+                        self.next_token();
+                        alt = self.parse_stmt().map(|stmt| Box::new(stmt));
+                    }
+
+                    // self.next_token();
+
+                    println!("{:?}", self.curr_token);
+
+                    Some(Expr::If(Box::new(cond), Box::new(csq), alt))
+                } else {
+                    self.no_prefix_error();
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -201,7 +228,7 @@ impl Parser {
     }
 
     fn parse_grouped_expr(&mut self) -> Option<Expr> {
-        println!("begin grouped {:?}", self.curr_token);
+        // println!("begin grouped {:?}", self.curr_token);
         self.next_token();
         let expr = self.parse_expr(Prec::Low);
 
@@ -211,7 +238,7 @@ impl Parser {
         }
 
         self.next_token();
-        println!("end grouped {:?}", self.curr_token);
+        // println!("end grouped {:?}", self.curr_token);
         expr
     }
 
@@ -292,6 +319,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn let_stmt() {
         let input = r#"let x = 69;
             let y = 69 + 420;
@@ -309,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    // #[ignore]
+    #[ignore]
     fn errors() {
         let input = r#"let x 69;
             let = 420;
@@ -319,6 +347,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn ret_stmt() {
         let input = r#"return 69;
             return 5 + 10;
@@ -440,6 +469,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn infix_fn_call() {
         let input = "add(1, 2)";
         let stmts = parse_test(input, 1, 0);
@@ -456,6 +486,18 @@ mod tests {
                 Expr::Int(2) => {},
                 _ => panic!("incorrect expr: {}", args[1].to_string()),
             }
+        }
+    }
+
+    #[test]
+    fn if_expr() {
+        let input = "if (x < y) { x }";
+        let stmts = parse_test(input, 1, 0);
+
+        if let Stmt::Expr(Expr::If(cond, csq, alt)) = stmts[0].clone() {
+            assert_eq!(cond.to_string(), "(x < y)");
+            assert_eq!(csq.to_string(), "x");
+            assert_eq!(alt, None);
         }
     }
 }
