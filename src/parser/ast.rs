@@ -49,7 +49,7 @@ pub enum Stmt {
     Let(Expr, Expr),
     Ret(Expr),
     Expr(Expr),
-    Block(Vec<Stmt>),
+    // Block(Vec<Stmt>),
 }
 
 impl ToString for Stmt {
@@ -62,11 +62,11 @@ impl ToString for Stmt {
                 format!("return {};", value.to_string())
             }
             Self::Expr(expr) => expr.to_string(),
-            Self::Block(stmts) => stmts
-                .iter()
-                .map(|stmt| stmt.to_string())
-                .collect::<Vec<_>>()
-                .join(""),
+            // Self::Block(stmts) => stmts
+            //     .iter()
+            //     .map(|stmt| stmt.to_string())
+            //     .collect::<Vec<_>>()
+            //     .join(""),
         }
     }
 }
@@ -78,7 +78,9 @@ pub enum Expr {
     Bool(bool),
     Prefix(Token, Box<Expr>),
     Infix(Token, Box<Expr>, Box<Expr>),
-    If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    // If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    If(Box<Expr>, Vec<Stmt>, Option<Vec<Stmt>>),
+    Fn(Vec<Expr>, Vec<Stmt>),
     Call(String, Vec<Expr>),
 }
 
@@ -94,18 +96,43 @@ impl ToString for Expr {
                 format!("({} {} {})", l.to_string(), op.to_string(), r.to_string())
             }
             Self::Bool(b) => b.to_string(),
-            Self::If(cond, conseq, alt) => {
+            Self::If(cond, csq, alt) => {
                 let mut output = format!(
-                    "if {} {{ {} }}",
+                    "if {} {{\n\t{}\n}}",
                     cond.to_string(),
-                    conseq.to_string(),
-                ); 
+                    // csq.to_string(),
+                    csq.iter()
+                        .map(|stmt| stmt.to_string())
+                        .collect::<Vec<_>>()
+                        .join(""),
+                );
 
                 if let Some(alt) = alt {
-                    output.push_str(&format!("else {{{}}}", alt.to_string()));
+                    output.push_str(&format!(
+                        " else {{\n\t{}\n}}",
+                        // alt.to_string()
+                        alt.iter()
+                            .map(|stmt| stmt.to_string())
+                            .collect::<Vec<_>>()
+                            .join(""),
+                    ));
                 }
 
                 output
+            }
+            Self::Fn(args, stmts) => {
+                format!(
+                    "fn({}) {{\n\t {}\n }}",
+                    args.iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    stmts
+                        .iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n\t")
+                )
             }
             Self::Call(func, args) => {
                 format!(

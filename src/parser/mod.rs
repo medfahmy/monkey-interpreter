@@ -61,7 +61,7 @@ impl Parser {
 
 
                 if self.curr_token == Token::Semicolon {
-                    self.program.push_error(format!("missing right value in let statement"));
+                    self.program.push_error("missing right value in let statement".to_string());
                     return None;
                 }
 
@@ -183,28 +183,87 @@ impl Parser {
 
                 if let Token::Lbrace = self.curr_token {
                     self.next_token();
-                    let csq = self.parse_stmt()?;
+                    let csq = self.parse_block_stmt();
                     self.next_token();
 
                     let mut alt = None;
 
                     if let Token::Else = self.curr_token {
                         self.next_token();
-                        alt = self.parse_stmt().map(|stmt| Box::new(stmt));
+
+                        if let Token::Lbrace = self.curr_token {
+                            self.next_token();
+                            alt = Some(self.parse_block_stmt());
+                        }
                     }
 
-                    // self.next_token();
-
-                    println!("{:?}", self.curr_token);
-
-                    Some(Expr::If(Box::new(cond), Box::new(csq), alt))
+                    Some(Expr::If(Box::new(cond), csq, alt))
                 } else {
                     self.no_prefix_error();
                     None
                 }
             }
+            Token::Fn => {
+                self.next_token();
+                if let Token::Lparen = self.curr_token {
+                    self.next_token();
+                    let args = self.parse_fn_args()?;
+                    
+                    if let Token::Lbrace = self.curr_token {
+                        self.next_token();
+                        let stmts = self.parse_block_stmt();
+
+                        return Some(Expr::Fn(args, stmts));
+                    } else {
+                        self.program.push_error(format!("expected Rparen, found {:?}", self.curr_token));
+                        return None;
+                    }
+                } else {
+                    self.program.push_error(format!("expected Lbrace, found {:?}", self.curr_token));
+                    return None;
+                }
+            }
             _ => None,
         }
+    }
+
+    fn parse_block_stmt(&mut self) -> Vec<Stmt> {
+        let mut stmts = Vec::new();
+        while self.curr_token != Token::Rbrace && self.curr_token != Token::Eof {
+            if let Some(stmt) = self.parse_stmt() {
+                stmts.push(stmt);
+            }
+            
+            self.next_token();
+        }
+
+        stmts
+    }
+
+    fn parse_fn_args(&mut self) -> Option<Vec<Expr>> {
+        let mut exprs = Vec::new();
+
+        while self.curr_token != Token::Eof {
+            if let Some(Expr::Ident(ident)) = self.parse_expr(Prec::Low) {
+                exprs.push(Expr::Ident(ident));
+                self.next_token();
+
+                if let Token::Rparen = self.curr_token {
+                    self.next_token();
+                    return Some(exprs);
+                } else if let Token::Comma = self.curr_token {
+                    self.next_token();
+                } else {
+                    self.program.push_error(format!("expected Comma, found {:?}", self.curr_token));
+                    return None;
+                }
+            } else {
+                self.program.push_error(format!("expected Ident, found {:?}", self.curr_token));
+                return None;
+            }
+        }
+
+        Some(exprs)
     }
 
     fn infix_parse(&mut self, left: &Expr) -> Option<Expr> {
@@ -264,7 +323,7 @@ enum Prec {
     Sum = 3,    // +
     Prod = 4,   // *
     Prefix = 5, // -x, !x
-    Call = 6,   // foo(x)
+    // Call = 6,   // foo(x)
 }
 
 impl From<&Token> for Prec {
@@ -496,8 +555,39 @@ mod tests {
 
         if let Stmt::Expr(Expr::If(cond, csq, alt)) = stmts[0].clone() {
             assert_eq!(cond.to_string(), "(x < y)");
-            assert_eq!(csq.to_string(), "x");
+            assert_eq!(csq.len(), 1);
+            assert_eq!(csq[0].to_string(), "x");
             assert_eq!(alt, None);
+        }
+    }
+
+    #[test]
+    fn if_else() {
+        let input = "if (x < y) { x } else { y }";
+        let stmts = parse_test(input, 1, 0);
+
+        if let Stmt::Expr(Expr::If(cond, csq, alt)) = stmts[0].clone() {
+            assert_eq!(cond.to_string(), "(x < y)");
+            assert_eq!(csq.len(), 1);
+            assert_eq!(csq[0].to_string(), "x");
+            let alt = alt.unwrap();
+            assert_eq!(alt.len(), 1);
+            assert_eq!(alt[0].to_string(), "y");
+        }
+    }
+
+    #[test]
+    fn func() {
+        let input = "fn(x < y) { return x + y }";
+        let stmts = parse_test(input, 1, 0);
+
+        if let Stmt::Expr(Expr::Fn(args, stmts)) = stmts[0].clone() {
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0].to_string(), "x");
+            assert_eq!(args[1].to_string(), "y");
+
+            assert_eq!(stmts.len(), 1);
+            assert_eq!(stmts[0].to_string(), "return x + y;");
         }
     }
 }
