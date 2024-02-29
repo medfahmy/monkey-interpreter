@@ -266,6 +266,32 @@ impl Parser {
         Some(exprs)
     }
 
+    fn parse_call_args(&mut self) -> Option<Vec<Expr>> {
+        let mut exprs = Vec::new();
+
+        while self.curr_token != Token::Eof {
+            if let Some(expr) = self.parse_expr(Prec::Low) {
+                exprs.push(expr);
+                self.next_token();
+
+                if let Token::Rparen = self.curr_token {
+                    self.next_token();
+                    return Some(exprs);
+                } else if let Token::Comma = self.curr_token {
+                    self.next_token();
+                } else {
+                    self.program.push_error(format!("expected Comma, found {:?}", self.curr_token));
+                    return None;
+                }
+            } else {
+                self.program.push_error(format!("expected Ident, found {:?}", self.curr_token));
+                return None;
+            }
+        }
+
+        Some(exprs)
+    }
+
     fn infix_parse(&mut self, left: &Expr) -> Option<Expr> {
         match &self.curr_token {
             Token::Asterisk
@@ -528,23 +554,17 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn infix_fn_call() {
         let input = "add(1, 2)";
         let stmts = parse_test(input, 1, 0);
 
-        if let Stmt::Expr(Expr::Call(fn_name, args)) = stmts[0].clone() {
-            assert_eq!(fn_name, "add".to_string());
-
-            match args[0] {
-                Expr::Int(1) => {},
-                _ => panic!("incorrect expr: {}", args[0].to_string()),
-            }
-
-            match args[1] {
-                Expr::Int(2) => {},
-                _ => panic!("incorrect expr: {}", args[1].to_string()),
-            }
+        if let Stmt::Expr(Expr::Call(func, args)) = stmts[0].clone() {
+            assert_eq!(func, "add");
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0].to_string(), "1");
+            assert_eq!(args[1], "2");
+        } else {
+            panic!("expected call expr, got {}", stmts[0]);
         }
     }
 
@@ -558,6 +578,8 @@ mod tests {
             assert_eq!(csq.len(), 1);
             assert_eq!(csq[0].to_string(), "x");
             assert_eq!(alt, None);
+        } else {
+            panic!("expected if expr, got {}", stmts[0]);
         }
     }
 
@@ -573,6 +595,8 @@ mod tests {
             let alt = alt.unwrap();
             assert_eq!(alt.len(), 1);
             assert_eq!(alt[0].to_string(), "y");
+        } else {
+            panic!("expected if expr, got {}", stmts[0]);
         }
     }
 
@@ -588,6 +612,8 @@ mod tests {
 
             assert_eq!(stmts.len(), 1);
             assert_eq!(stmts[0].to_string(), "return x + y;");
+        } else {
+            panic!("expected fn expr, got {}", stmts[0]);
         }
     }
 }
