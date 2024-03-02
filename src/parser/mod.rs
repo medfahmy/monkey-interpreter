@@ -67,8 +67,8 @@ impl Parser {
 
                 let stmt = self.parse_expr_stmt();
 
-                if let Stmt::Expr(expr) = stmt.as_ref().unwrap() {
-                    Some(Stmt::Let(Expr::Ident(name), expr.clone()))
+                if let Stmt::Expr(value) = stmt.as_ref().unwrap() {
+                    Some(Stmt::Let { ident: Expr::Ident(name), value: value.clone() })
                 } else {
                     self.program.push_error(format!(
                         "expected expression, got {} instead",
@@ -108,7 +108,7 @@ impl Parser {
         let stmt = self.parse_expr_stmt()?;
 
         if let Stmt::Expr(expr) = stmt {
-            Some(Stmt::Ret(expr))
+            Some(Stmt::Return(expr))
         } else {
             self.program.push_error(format!(
                 "expected expression, got {} instead",
@@ -156,7 +156,14 @@ impl Parser {
     fn prefix_parse(&mut self) -> Option<Expr> {
         match &self.curr_token {
             Token::Lparen => self.parse_grouped_expr(),
-            Token::Ident(ident) => Some(Expr::Ident(ident.clone())),
+            Token::Ident(ident) => {
+                // if self.peek_token == Token::Lparen {
+                //     self.next_token();
+                //     self.parse_fn_args();
+                // }
+
+                Some(Expr::Ident(ident.clone()))
+            }
             Token::Int(n) => {
                 let res = n.parse();
                 match res {
@@ -173,8 +180,8 @@ impl Parser {
             Token::Bang | Token::Minus => {
                 let op = self.curr_token.clone();
                 self.next_token();
-                let expr = self.parse_expr(Prec::Prefix)?;
-                Some(Expr::Prefix(op, Box::new(expr)))
+                let value = self.parse_expr(Prec::Prefix)?;
+                Some(Expr::Prefix { op, value: Box::new(value) })
             }
             Token::If => {
                 self.next_token();
@@ -197,7 +204,7 @@ impl Parser {
                         }
                     }
 
-                    Some(Expr::If(Box::new(cond), csq, alt))
+                    Some(Expr::If { cond: Box::new(cond), csq, alt })
                 } else {
                     self.no_prefix_error();
                     None
@@ -211,9 +218,9 @@ impl Parser {
                     
                     if let Token::Lbrace = self.curr_token {
                         self.next_token();
-                        let stmts = self.parse_block_stmt();
+                        let body = self.parse_block_stmt();
 
-                        return Some(Expr::Fn(args, stmts));
+                        return Some(Expr::Fn { args, body });
                     } else {
                         self.program.push_error(format!("expected Rparen, found {:?}", self.curr_token));
                         return None;
@@ -302,11 +309,11 @@ impl Parser {
             | Token::NotEq
             | Token::Lt
             | Token::Gt => {
-                let token = self.curr_token.clone();
+                let op = self.curr_token.clone();
                 let prec = self.curr_prec();
                 self.next_token();
                 let right = self.parse_expr(prec)?;
-                Some(Expr::Infix(token, Box::new(left.clone()), Box::new(right)))
+                Some(Expr::Infix { op, left: Box::new(left.clone()), right: Box::new(right) })
             }
             _ => None,
         }
@@ -395,9 +402,10 @@ mod tests {
         stmts.clone()
     }
 
-    fn let_test(stmt: &Stmt, name: String) {
-        if let Stmt::Let(ident, _) = stmt {
-            assert_eq!(ident, &Expr::Ident(name.clone()));
+    fn let_test(stmt: &Stmt, exp_ident: String, exp_value: String) {
+        if let Stmt::Let { ident, value } = stmt {
+            assert_eq!(ident.to_string(), exp_ident);
+            assert_eq!(value.to_string(), exp_value);
         } else {
             panic!("stmt is not let: {:?}", &stmt);
         }
@@ -413,11 +421,12 @@ mod tests {
         let stmts = parse_test(input, 3, 0);
 
         let names = ["x", "y", "foo"];
+        let values = ["69", "(69 + 420)", "bar(x)"];
 
         for i in 0..3 {
-            let name = names[i];
-            let stmt = stmts[i].clone();
-            let_test(&stmt, name.to_string());
+            // let name = names[i];
+            // let stmt = stmts[i].clone();
+            let_test(&stmts[i].clone(), names[i].to_string(), values[i].to_string());
         }
     }
 
@@ -441,7 +450,7 @@ mod tests {
         let stmts = parse_test(input, 3, 0);
 
         for stmt in stmts {
-            assert!(matches!(stmt, Stmt::Ret(..)));
+            assert!(matches!(stmt, Stmt::Return(..)));
         }
     }
 
@@ -480,9 +489,9 @@ mod tests {
 
         assert!(matches!(stmt, Stmt::Expr(..)), "stmt is not expr");
 
-        if let Stmt::Expr(Expr::Prefix(op, expr)) = stmt {
+        if let Stmt::Expr(Expr::Prefix { op, value }) = stmt {
             assert_eq!(op, exp_op);
-            let expr = *expr;
+            let expr = *value;
             assert!(matches!(expr, Expr::Int(..)), "epxr is not int");
 
             if let Expr::Int(n) = expr {
@@ -510,12 +519,12 @@ mod tests {
             let stmt = parse_test(inputs[i], 1, 0)[0].clone();
 
             if let Stmt::Expr(expr) = stmt {
-                if let Expr::Infix(token, l, r) = expr {
-                    assert_eq!(token.to_string(), ops[i].to_string());
+                if let Expr::Infix { op, left, right } = expr {
+                    assert_eq!(op.to_string(), ops[i].to_string());
 
-                    match (*l.clone(), *r.clone()) {
+                    match (*left.clone(), *right.clone()) {
                         (Expr::Int(5), Expr::Int(5)) => {}
-                        _ => panic!("incorrect operands: {}, {}", l.to_string(), r.to_string()),
+                        _ => panic!("incorrect operands: {}, {}", left.to_string(), right.to_string()),
                     }
                 }
             } else {
@@ -554,32 +563,17 @@ mod tests {
     }
 
     #[test]
-    fn infix_fn_call() {
-        let input = "add(1, 2)";
-        let stmts = parse_test(input, 1, 0);
-
-        if let Stmt::Expr(Expr::Call(func, args)) = stmts[0].clone() {
-            assert_eq!(func, "add");
-            assert_eq!(args.len(), 2);
-            assert_eq!(args[0].to_string(), "1");
-            assert_eq!(args[1], "2");
-        } else {
-            panic!("expected call expr, got {}", stmts[0]);
-        }
-    }
-
-    #[test]
     fn if_expr() {
         let input = "if (x < y) { x }";
         let stmts = parse_test(input, 1, 0);
 
-        if let Stmt::Expr(Expr::If(cond, csq, alt)) = stmts[0].clone() {
+        if let Stmt::Expr(Expr::If { cond, csq, alt }) = stmts[0].clone() {
             assert_eq!(cond.to_string(), "(x < y)");
             assert_eq!(csq.len(), 1);
             assert_eq!(csq[0].to_string(), "x");
             assert_eq!(alt, None);
         } else {
-            panic!("expected if expr, got {}", stmts[0]);
+            panic!("expected if expr, got {:?}", stmts[0]);
         }
     }
 
@@ -588,7 +582,7 @@ mod tests {
         let input = "if (x < y) { x } else { y }";
         let stmts = parse_test(input, 1, 0);
 
-        if let Stmt::Expr(Expr::If(cond, csq, alt)) = stmts[0].clone() {
+        if let Stmt::Expr(Expr::If { cond, csq, alt }) = stmts[0].clone() {
             assert_eq!(cond.to_string(), "(x < y)");
             assert_eq!(csq.len(), 1);
             assert_eq!(csq[0].to_string(), "x");
@@ -596,24 +590,39 @@ mod tests {
             assert_eq!(alt.len(), 1);
             assert_eq!(alt[0].to_string(), "y");
         } else {
-            panic!("expected if expr, got {}", stmts[0]);
+            panic!("expected if expr, got {:?}", stmts[0]);
         }
     }
 
     #[test]
     fn func() {
-        let input = "fn(x < y) { return x + y }";
+        let input = "fn(x, y) { return x + y }";
         let stmts = parse_test(input, 1, 0);
 
-        if let Stmt::Expr(Expr::Fn(args, stmts)) = stmts[0].clone() {
+        if let Stmt::Expr(Expr::Fn { args, body }) = stmts[0].clone() {
             assert_eq!(args.len(), 2);
             assert_eq!(args[0].to_string(), "x");
             assert_eq!(args[1].to_string(), "y");
 
-            assert_eq!(stmts.len(), 1);
-            assert_eq!(stmts[0].to_string(), "return x + y;");
+            assert_eq!(body.len(), 1);
+            assert_eq!(body[0].to_string(), "return (x + y);");
         } else {
-            panic!("expected fn expr, got {}", stmts[0]);
+            panic!("expected fn expr, got {:?}", stmts[0]);
+        }
+    }
+
+    #[test]
+    fn infix_fn_call() {
+        let input = "add(1, 2)";
+        let stmts = parse_test(input, 1, 0);
+
+        if let Stmt::Expr(Expr::FnCall { ident, args }) = stmts[0].clone() {
+            assert_eq!(ident, "add");
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0].to_string(), "1");
+            assert_eq!(args[1].to_string(), "2");
+        } else {
+            panic!("expected call expr, got {:?}", stmts[0]);
         }
     }
 }

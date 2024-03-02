@@ -46,8 +46,8 @@ impl ToString for Program {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Let(Expr, Expr),
-    Ret(Expr),
+    Let { ident: Expr, value: Expr },
+    Return(Expr),
     Expr(Expr),
     // Block(Vec<Stmt>),
 }
@@ -55,10 +55,10 @@ pub enum Stmt {
 impl ToString for Stmt {
     fn to_string(&self) -> String {
         match self {
-            Self::Let(name, value) => {
-                format!("let {} = {};", name.to_string(), value.to_string())
+            Self::Let { ident, value } => {
+                format!("let {} = {};", ident.to_string(), value.to_string())
             }
-            Self::Ret(value) => {
+            Self::Return(value) => {
                 format!("return {};", value.to_string())
             }
             Self::Expr(expr) => expr.to_string(),
@@ -76,12 +76,11 @@ pub enum Expr {
     Ident(String),
     Int(i64),
     Bool(bool),
-    Prefix(Token, Box<Expr>),
-    Infix(Token, Box<Expr>, Box<Expr>),
-    // If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
-    If(Box<Expr>, Vec<Stmt>, Option<Vec<Stmt>>),
-    Fn(Vec<Expr>, Vec<Stmt>),
-    Call(String, Vec<Expr>),
+    Prefix { op: Token, value: Box<Expr> },
+    Infix { op: Token, left: Box<Expr>, right: Box<Expr> },
+    If { cond: Box<Expr>, csq: Vec<Stmt>, alt: Option<Vec<Stmt>> },
+    Fn { args: Vec<Expr>, body: Vec<Stmt> },
+    FnCall { ident: String, args: Vec<Expr> },
 }
 
 impl ToString for Expr {
@@ -89,14 +88,14 @@ impl ToString for Expr {
         match self {
             Self::Ident(name) => name.to_string(),
             Self::Int(n) => n.to_string(),
-            Self::Prefix(op, expr) => {
-                format!("({}{})", op.to_string(), expr.to_string())
+            Self::Prefix { op, value } => {
+                format!("({}{})", op.to_string(), value.to_string())
             }
-            Self::Infix(op, l, r) => {
-                format!("({} {} {})", l.to_string(), op.to_string(), r.to_string())
+            Self::Infix { op, left, right } => {
+                format!("({} {} {})", left.to_string(), op.to_string(), right.to_string())
             }
             Self::Bool(b) => b.to_string(),
-            Self::If(cond, csq, alt) => {
+            Self::If { cond, csq, alt } => {
                 let mut output = format!(
                     "if {} {{\n\t{}\n}}",
                     cond.to_string(),
@@ -120,24 +119,24 @@ impl ToString for Expr {
 
                 output
             }
-            Self::Fn(args, stmts) => {
+            Self::Fn { args, body } => {
                 format!(
                     "fn({}) {{\n\t {}\n }}",
                     args.iter()
                         .map(|arg| arg.to_string())
                         .collect::<Vec<_>>()
                         .join(", "),
-                    stmts
+                    body
                         .iter()
                         .map(|arg| arg.to_string())
                         .collect::<Vec<_>>()
                         .join("\n\t")
                 )
             }
-            Self::Call(func, args) => {
+            Self::FnCall { ident, args } => {
                 format!(
                     "{}({})",
-                    func,
+                    ident,
                     args.iter()
                         .map(|arg| arg.to_string())
                         .collect::<Vec<_>>()
@@ -155,10 +154,10 @@ mod tests {
     #[test]
     fn to_string_works() {
         let program = Program {
-            stmts: vec![Stmt::Let(
-                Expr::Ident("a".to_string()),
-                Expr::Ident("b".to_string()),
-            )],
+            stmts: vec![Stmt::Let {
+                ident: Expr::Ident("a".to_string()),
+                value: Expr::Ident("b".to_string()),
+            }],
             errors: vec![],
         };
 
