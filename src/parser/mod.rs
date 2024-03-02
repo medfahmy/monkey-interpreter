@@ -154,16 +154,20 @@ impl Parser {
     }
 
     fn prefix_parse(&mut self) -> Option<Expr> {
-        match &self.curr_token {
-            Token::Lparen => self.parse_grouped_expr(),
+        match self.curr_token.clone() {
             Token::Ident(ident) => {
-                // if self.peek_token == Token::Lparen {
-                //     self.next_token();
-                //     self.parse_fn_args();
-                // }
+                if self.peek_token == Token::Lparen {
+                    self.next_token();
 
-                Some(Expr::Ident(ident.clone()))
+                    let args = self.parse_call_args()?;
+                    self.next_token();
+
+                    Some(Expr::FnCall { ident, args })
+                } else {
+                    Some(Expr::Ident(ident.clone()))
+                }
             }
+            Token::Lparen => self.parse_grouped_expr(),
             Token::Int(n) => {
                 let res = n.parse();
                 match res {
@@ -275,6 +279,8 @@ impl Parser {
 
     fn parse_call_args(&mut self) -> Option<Vec<Expr>> {
         let mut exprs = Vec::new();
+
+        self.next_token();
 
         while self.curr_token != Token::Eof {
             if let Some(expr) = self.parse_expr(Prec::Low) {
