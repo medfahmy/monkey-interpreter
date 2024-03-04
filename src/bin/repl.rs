@@ -21,7 +21,7 @@ fn main() {
 
         let program = Parser::parse(&buf);
 
-        println!("{:?}", program);
+        // println!("{:?}", program);
 
         let errors = program.errors();
 
