@@ -46,27 +46,25 @@ impl ToString for Program {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Let { ident: Expr, value: Expr },
-    Return(Expr),
+    Let { ident: String, expr: Expr },
+    Assign { ident: String, expr: Expr },
+    Ret(Expr),
     Expr(Expr),
-    // Block(Vec<Stmt>),
 }
 
 impl ToString for Stmt {
     fn to_string(&self) -> String {
         match self {
-            Self::Let { ident, value } => {
-                format!("let {} = {};", ident.to_string(), value.to_string())
+            Self::Let { ident, expr } => {
+                format!("let {} = {};", ident.to_string(), expr.to_string())
             }
-            Self::Return(value) => {
+            Self::Assign { ident, expr } => {
+                format!("{} = {};", ident.to_string(), expr.to_string())
+            }
+            Self::Ret(value) => {
                 format!("return {};", value.to_string())
             }
             Self::Expr(expr) => expr.to_string(),
-            // Self::Block(stmts) => stmts
-            //     .iter()
-            //     .map(|stmt| stmt.to_string())
-            //     .collect::<Vec<_>>()
-            //     .join(""),
         }
     }
 }
@@ -155,8 +153,8 @@ mod tests {
     fn to_string_works() {
         let program = Program {
             stmts: vec![Stmt::Let {
-                ident: Expr::Ident("a".to_string()),
-                value: Expr::Ident("b".to_string()),
+                ident: "a".to_string(),
+                expr: Expr::Ident("b".to_string()),
             }],
             errors: vec![],
         };

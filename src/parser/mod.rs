@@ -1,6 +1,6 @@
-mod ast;
-mod lexer;
-mod token;
+pub(crate) mod ast;
+pub(crate) mod lexer;
+pub(crate) mod token;
 
 use ast::{Expr, Program, Stmt};
 use lexer::Lexer;
@@ -44,9 +44,21 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Option<Stmt> {
-        match self.curr_token {
+        match self.curr_token.clone() {
             Token::Let => self.parse_let_stmt(),
             Token::Return => self.parse_ret_stmt(),
+            Token::Ident(ident) => {
+                if self.peek_token == Token::Assign {
+                    self.next_token();
+                    self.next_token();
+                    let expr = self.parse_expr(0)?;
+                    self.next_token();
+
+                    Some(Stmt::Assign { ident, expr })
+                } else {
+                    self.parse_expr_stmt()
+                }
+            },
             _ => self.parse_expr_stmt(),
         }
     }
@@ -68,7 +80,7 @@ impl Parser {
                 let stmt = self.parse_expr_stmt();
 
                 if let Stmt::Expr(value) = stmt.as_ref().unwrap() {
-                    Some(Stmt::Let { ident: Expr::Ident(name), value: value.clone() })
+                    Some(Stmt::Let { ident: name, expr: value.clone() })
                 } else {
                     self.program.push_error(format!(
                         "expected expression, got {} instead",
@@ -108,7 +120,7 @@ impl Parser {
         let stmt = self.parse_expr_stmt()?;
 
         if let Stmt::Expr(expr) = stmt {
-            Some(Stmt::Return(expr))
+            Some(Stmt::Ret(expr))
         } else {
             self.program.push_error(format!(
                 "expected expression, got {} instead",
@@ -119,7 +131,7 @@ impl Parser {
     }
 
     fn parse_expr_stmt(&mut self) -> Option<Stmt> {
-        let stmt = Stmt::Expr(self.parse_expr(Prec::Low)?);
+        let stmt = Stmt::Expr(self.parse_expr(0)?);
 
         if let Token::Semicolon = self.peek_token {
             self.next_token();
@@ -128,12 +140,12 @@ impl Parser {
         Some(stmt)
     }
 
-    fn parse_expr(&mut self, prec: Prec) -> Option<Expr> {
+    fn parse_expr(&mut self, prec: usize) -> Option<Expr> {
         // println!("begin {:?}", self.curr_token);
 
         if let Some(mut left) = self.prefix_parse() {
             while self.peek_token != Token::Semicolon
-                && (prec as usize) < (self.peek_prec() as usize)
+                && prec < self.peek_prec()
             {
                 self.next_token();
 
@@ -144,6 +156,8 @@ impl Parser {
                 }
             }
 
+            // self.next_token();
+            //
             // println!("parsed {:?}", left);
             // println!("end {:?}", self.curr_token);
             Some(left)
@@ -184,12 +198,12 @@ impl Parser {
             Token::Bang | Token::Minus => {
                 let op = self.curr_token.clone();
                 self.next_token();
-                let value = self.parse_expr(Prec::Prefix)?;
+                let value = self.parse_expr(5)?;
                 Some(Expr::Prefix { op, value: Box::new(value) })
             }
             Token::If => {
                 self.next_token();
-                let cond = self.parse_expr(Prec::Low)?;
+                let cond = self.parse_expr(0)?;
                 self.next_token();
 
                 if let Token::Lbrace = self.curr_token {
@@ -255,7 +269,7 @@ impl Parser {
         let mut exprs = Vec::new();
 
         while self.curr_token != Token::Eof {
-            if let Some(Expr::Ident(ident)) = self.parse_expr(Prec::Low) {
+            if let Some(Expr::Ident(ident)) = self.parse_expr(0) {
                 exprs.push(Expr::Ident(ident));
                 self.next_token();
 
@@ -283,7 +297,7 @@ impl Parser {
         self.next_token();
 
         while self.curr_token != Token::Eof {
-            if let Some(expr) = self.parse_expr(Prec::Low) {
+            if let Some(expr) = self.parse_expr(0) {
                 exprs.push(expr);
                 self.next_token();
 
@@ -328,7 +342,7 @@ impl Parser {
     fn parse_grouped_expr(&mut self) -> Option<Expr> {
         // println!("begin grouped {:?}", self.curr_token);
         self.next_token();
-        let expr = self.parse_expr(Prec::Low);
+        let expr = self.parse_expr(0);
 
         if self.peek_token != Token::Rparen {
             self.next_token();
@@ -345,38 +359,26 @@ impl Parser {
         self.program.push_error(error);
     }
 
-    fn peek_prec(&self) -> Prec {
-        Prec::from(&self.peek_token)
+
+    fn curr_prec(&self) -> usize {
+        Parser::check_prec(&self.curr_token)
     }
 
-    fn curr_prec(&self) -> Prec {
-        Prec::from(&self.curr_token)
+    fn peek_prec(&self) -> usize {
+        Parser::check_prec(&self.peek_token)
     }
-}
 
-#[derive(Clone, Copy, Debug)]
-enum Prec {
-    Low = 0,
-    Eq = 1,     // ==
-    Lg = 2,     // <, >
-    Sum = 3,    // +
-    Prod = 4,   // *
-    Prefix = 5, // -x, !x
-    // Call = 6,   // foo(x)
-}
-
-impl From<&Token> for Prec {
-    fn from(token: &Token) -> Self {
+    fn check_prec(token: &Token) -> usize {
         match token {
-            Token::Eq => Self::Eq,
-            Token::NotEq => Self::Eq,
-            Token::Lt => Self::Lg,
-            Token::Gt => Self::Lg,
-            Token::Plus => Self::Sum,
-            Token::Minus => Self::Sum,
-            Token::Slash => Self::Prod,
-            Token::Asterisk => Self::Prod,
-            _ => Self::Low,
+            Token::Eq => 1,
+            Token::NotEq => 1,
+            Token::Lt => 2,
+            Token::Gt => 2,
+            Token::Plus => 3,
+            Token::Minus => 3,
+            Token::Asterisk => 4,
+            Token::Slash => 4,
+            _ => 0,
         }
     }
 }
@@ -409,7 +411,7 @@ mod tests {
     }
 
     fn let_test(stmt: &Stmt, exp_ident: String, exp_value: String) {
-        if let Stmt::Let { ident, value } = stmt {
+        if let Stmt::Let { ident, expr: value } = stmt {
             assert_eq!(ident.to_string(), exp_ident);
             assert_eq!(value.to_string(), exp_value);
         } else {
@@ -418,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    // #[ignore]
     fn let_stmt() {
         let input = r#"let x = 69;
             let y = 69 + 420;
@@ -437,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    // #[ignore]
     fn errors() {
         let input = r#"let x 69;
             let = 420;
@@ -447,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    // #[ignore]
     fn ret_stmt() {
         let input = r#"return 69;
             return 5 + 10;
@@ -456,7 +458,7 @@ mod tests {
         let stmts = parse_test(input, 3, 0);
 
         for stmt in stmts {
-            assert!(matches!(stmt, Stmt::Return(..)));
+            assert!(matches!(stmt, Stmt::Ret(..)));
         }
     }
 
