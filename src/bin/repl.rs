@@ -1,6 +1,5 @@
+use monkey::{Eval, Parser};
 use std::io::{stdin, stdout, Write};
-use monkey::{Parser, Eval};
-
 
 fn main() {
     let stdin = stdin();
@@ -27,7 +26,7 @@ fn main() {
 
         if !errors.is_empty() {
             println!("parser errors: ");
-            
+
             for error in errors {
                 println!("- {}", error);
             }

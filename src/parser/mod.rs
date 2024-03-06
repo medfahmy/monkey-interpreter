@@ -48,17 +48,17 @@ impl Parser {
             Token::Let => self.parse_let_stmt(),
             Token::Return => self.parse_ret_stmt(),
             Token::Ident(ident) => {
-                if self.peek_token == Token::Assign {
+                if let Token::Assign(op) = self.peek_token {
                     self.next_token();
                     self.next_token();
                     let expr = self.parse_expr(0)?;
                     self.next_token();
 
-                    Some(Stmt::Assign { ident, expr })
+                    Some(Stmt::Assign { op, ident, expr })
                 } else {
                     self.parse_expr_stmt()
                 }
-            },
+            }
             _ => self.parse_expr_stmt(),
         }
     }
@@ -67,20 +67,23 @@ impl Parser {
         if let Token::Ident(name) = self.peek_token.clone() {
             self.next_token();
 
-            if let Token::Assign = self.peek_token {
+            if let Token::Assign('\0') = self.peek_token {
                 self.next_token();
                 self.next_token();
-
 
                 if self.curr_token == Token::Semicolon {
-                    self.program.push_error("missing right value in let statement".to_string());
+                    self.program
+                        .push_error("missing right value in let statement".to_string());
                     return None;
                 }
 
                 let stmt = self.parse_expr_stmt();
 
                 if let Stmt::Expr(value) = stmt.as_ref().unwrap() {
-                    Some(Stmt::Let { ident: name, expr: value.clone() })
+                    Some(Stmt::Let {
+                        ident: name,
+                        expr: value.clone(),
+                    })
                 } else {
                     self.program.push_error(format!(
                         "expected expression, got {} instead",
@@ -101,10 +104,8 @@ impl Parser {
                 None
             }
         } else {
-            self.program.push_error(
-                format!("expected Ident, got {:?} instead", 
-                self.peek_token)
-            );
+            self.program
+                .push_error(format!("expected Ident, got {:?} instead", self.peek_token));
             None
         }
     }
@@ -144,9 +145,7 @@ impl Parser {
         // println!("begin {:?}", self.curr_token);
 
         if let Some(mut left) = self.prefix_parse() {
-            while self.peek_token != Token::Semicolon
-                && prec < self.peek_prec()
-            {
+            while self.peek_token != Token::Semicolon && prec < self.peek_prec() {
                 self.next_token();
 
                 if let Some(right) = self.infix_parse(&left) {
@@ -195,11 +194,14 @@ impl Parser {
             }
             Token::True => Some(Expr::Bool(true)),
             Token::False => Some(Expr::Bool(false)),
-            Token::Bang | Token::Minus => {
+            Token::Bang | Token::Sub => {
                 let op = self.curr_token.clone();
                 self.next_token();
                 let value = self.parse_expr(5)?;
-                Some(Expr::Prefix { op, value: Box::new(value) })
+                Some(Expr::Prefix {
+                    op,
+                    value: Box::new(value),
+                })
             }
             Token::If => {
                 self.next_token();
@@ -222,7 +224,11 @@ impl Parser {
                         }
                     }
 
-                    Some(Expr::If { cond: Box::new(cond), csq, alt })
+                    Some(Expr::If {
+                        cond: Box::new(cond),
+                        csq,
+                        alt,
+                    })
                 } else {
                     self.no_prefix_error();
                     None
@@ -233,18 +239,20 @@ impl Parser {
                 if let Token::Lparen = self.curr_token {
                     self.next_token();
                     let args = self.parse_fn_args()?;
-                    
+
                     if let Token::Lbrace = self.curr_token {
                         self.next_token();
                         let body = self.parse_block_stmt();
 
                         return Some(Expr::Fn { args, body });
                     } else {
-                        self.program.push_error(format!("expected Rparen, found {:?}", self.curr_token));
+                        self.program
+                            .push_error(format!("expected Rparen, found {:?}", self.curr_token));
                         return None;
                     }
                 } else {
-                    self.program.push_error(format!("expected Lbrace, found {:?}", self.curr_token));
+                    self.program
+                        .push_error(format!("expected Lbrace, found {:?}", self.curr_token));
                     return None;
                 }
             }
@@ -258,7 +266,7 @@ impl Parser {
             if let Some(stmt) = self.parse_stmt() {
                 stmts.push(stmt);
             }
-            
+
             self.next_token();
         }
 
@@ -279,11 +287,13 @@ impl Parser {
                 } else if let Token::Comma = self.curr_token {
                     self.next_token();
                 } else {
-                    self.program.push_error(format!("expected Comma, found {:?}", self.curr_token));
+                    self.program
+                        .push_error(format!("expected Comma, found {:?}", self.curr_token));
                     return None;
                 }
             } else {
-                self.program.push_error(format!("expected Ident, found {:?}", self.curr_token));
+                self.program
+                    .push_error(format!("expected Ident, found {:?}", self.curr_token));
                 return None;
             }
         }
@@ -307,11 +317,13 @@ impl Parser {
                 } else if let Token::Comma = self.curr_token {
                     self.next_token();
                 } else {
-                    self.program.push_error(format!("expected Comma, found {:?}", self.curr_token));
+                    self.program
+                        .push_error(format!("expected Comma, found {:?}", self.curr_token));
                     return None;
                 }
             } else {
-                self.program.push_error(format!("expected Ident, found {:?}", self.curr_token));
+                self.program
+                    .push_error(format!("expected Ident, found {:?}", self.curr_token));
                 return None;
             }
         }
@@ -321,10 +333,10 @@ impl Parser {
 
     fn infix_parse(&mut self, left: &Expr) -> Option<Expr> {
         match &self.curr_token {
-            Token::Asterisk
-            | Token::Slash
-            | Token::Plus
-            | Token::Minus
+            Token::Mul
+            | Token::Div
+            | Token::Add
+            | Token::Sub
             | Token::Eq
             | Token::NotEq
             | Token::Lt
@@ -333,7 +345,11 @@ impl Parser {
                 let prec = self.curr_prec();
                 self.next_token();
                 let right = self.parse_expr(prec)?;
-                Some(Expr::Infix { op, left: Box::new(left.clone()), right: Box::new(right) })
+                Some(Expr::Infix {
+                    op,
+                    left: Box::new(left.clone()),
+                    right: Box::new(right),
+                })
             }
             _ => None,
         }
@@ -359,7 +375,6 @@ impl Parser {
         self.program.push_error(error);
     }
 
-
     fn curr_prec(&self) -> usize {
         Parser::check_prec(&self.curr_token)
     }
@@ -374,10 +389,10 @@ impl Parser {
             Token::NotEq => 1,
             Token::Lt => 2,
             Token::Gt => 2,
-            Token::Plus => 3,
-            Token::Minus => 3,
-            Token::Asterisk => 4,
-            Token::Slash => 4,
+            Token::Add => 3,
+            Token::Sub => 3,
+            Token::Mul => 4,
+            Token::Div => 4,
             _ => 0,
         }
     }
@@ -434,7 +449,11 @@ mod tests {
         for i in 0..3 {
             // let name = names[i];
             // let stmt = stmts[i].clone();
-            let_test(&stmts[i].clone(), names[i].to_string(), values[i].to_string());
+            let_test(
+                &stmts[i].clone(),
+                names[i].to_string(),
+                values[i].to_string(),
+            );
         }
     }
 
@@ -513,7 +532,7 @@ mod tests {
     #[test]
     fn prefix_expr() {
         prefix_expr_test("!5", Token::Bang, 5);
-        prefix_expr_test("-15", Token::Minus, 15);
+        prefix_expr_test("-15", Token::Sub, 15);
     }
 
     #[test]
@@ -532,7 +551,11 @@ mod tests {
 
                     match (*left.clone(), *right.clone()) {
                         (Expr::Int(5), Expr::Int(5)) => {}
-                        _ => panic!("incorrect operands: {}, {}", left.to_string(), right.to_string()),
+                        _ => panic!(
+                            "incorrect operands: {}, {}",
+                            left.to_string(),
+                            right.to_string()
+                        ),
                     }
                 }
             } else {

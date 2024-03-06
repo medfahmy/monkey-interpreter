@@ -6,7 +6,6 @@ use std::collections::HashMap;
 pub enum Value {
     Int(i64),
     Bool(bool),
-    // Func(Box<dyn Fn() -> Value>),
     Nil,
 }
 
@@ -18,13 +17,11 @@ impl std::fmt::Display for Value {
             Int(n) => n.to_string(),
             Bool(b) => b.to_string(),
             Nil => "nil".to_string(),
-            // Func(f) => format!("fn[{:?}]", f),
         };
 
         writeln!(f, "{}", output)
     }
 }
-
 
 pub struct Eval {
     bindings: HashMap<String, Value>,
@@ -59,11 +56,36 @@ impl Eval {
                 self.bindings.insert(ident, value);
                 Nil
             }
-            Stmt::Assign { ident, expr } => {
-                let v = self.eval_expr(expr);
+            Stmt::Assign { op, ident, expr } => {
+                let binding = self.bindings.get(&ident);
 
-                if let Some(value) = self.bindings.get_mut(&ident) {
-                    *value = v;
+                if binding.is_none() {
+                    return Nil;
+                }
+
+                let value = self.eval_expr(expr);
+                let binding = self.bindings.get_mut(&ident);
+
+                assert!(op == '\0' || op == '+' || op == '-' || op == '*' || op == '/');
+
+                if op == '\0' {
+                    *binding.unwrap() = value;
+                } else if let Some(Value::Int(n)) = binding {
+                    if let Value::Int(value) = value {
+                        match op {
+                            '+' => *n += value,
+                            '-' => *n -= value,
+                            '*' => *n *= value,
+                            '/' => {
+                                if let Some(value) = n.checked_div(value) {
+                                    *n = value;
+                                } else {
+                                    println!("syntax error");
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
                 }
 
                 Nil
@@ -71,18 +93,14 @@ impl Eval {
             Stmt::Ret(expr) => self.eval_expr(expr),
         }
     }
-     
+
     fn eval_expr(&mut self, expr: Expr) -> Value {
         match expr {
             Expr::Int(n) => Int(n),
             Expr::Bool(b) => Bool(b),
-            Expr::Ident(ident) => self
-                .bindings
-                .get(&ident)
-                .unwrap_or(&Value::Nil)
-                .clone(),
+            Expr::Ident(ident) => self.bindings.get(&ident).unwrap_or(&Value::Nil).clone(),
             Expr::Prefix { op, value } => match op {
-                Token::Minus => match self.eval_expr(*value) {
+                Token::Sub => match self.eval_expr(*value) {
                     Int(n) => Int(-n),
                     _ => Nil,
                 },
@@ -95,10 +113,17 @@ impl Eval {
             Expr::Infix { op, left, right } => {
                 match (self.eval_expr(*left), self.eval_expr(*right)) {
                     (Int(x), Int(y)) => match op {
-                        Token::Plus => Int(x + y),
-                        Token::Minus => Int(x - y),
-                        Token::Asterisk => Int(x * y),
-                        Token::Slash => Int(x / y),
+                        Token::Add => Int(x + y),
+                        Token::Sub => Int(x - y),
+                        Token::Mul => Int(x * y),
+                        Token::Div => {
+                            if let Some(value) = x.checked_div(y) {
+                                Int(value)
+                            } else {
+                                println!("syntax error");
+                                Nil
+                            }
+                        }
                         Token::Eq => Bool(x == y),
                         Token::NotEq => Bool(x != y),
                         Token::Lt => Bool(x < y),
@@ -139,7 +164,7 @@ impl Eval {
                 } else {
                     Nil
                 }
-            },
+            }
             _ => Nil,
             // Expr::Fn { args, body } => {
             //     todo!()

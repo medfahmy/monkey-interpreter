@@ -10,12 +10,12 @@ pub enum Token {
     False,
     Ident(String),
     Int(String),
-    Assign,
-    Plus,
-    Minus,
+    Assign(char),
+    Add,
+    Sub,
+    Mul,
+    Div,
     Bang,
-    Asterisk,
-    Slash,
     Eq,
     NotEq,
     Lt,
@@ -31,7 +31,7 @@ pub enum Token {
 }
 
 impl ToString for Token {
-    fn to_string(&self) -> String { 
+    fn to_string(&self) -> String {
         use Token::*;
 
         let s = match self {
@@ -44,12 +44,19 @@ impl ToString for Token {
             False => "false",
             Ident(s) => s,
             Int(s) => s,
-            Assign => "=",
-            Plus => "+",
-            Minus => "-",
+            Assign(op) => match op {
+                '\0' => "=",
+                '+' => "+=",
+                '-' => "-=",
+                '*' => "*=",
+                '/' => "/=",
+                _ => unreachable!(),
+            },
+            Add => "+",
+            Sub => "-",
+            Mul => "*",
+            Div => "/",
             Bang => "!",
-            Asterisk => "*",
-            Slash => "/",
             Eq => "==",
             NotEq => "!=",
             Lt => "<",

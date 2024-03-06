@@ -47,7 +47,7 @@ impl ToString for Program {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let { ident: String, expr: Expr },
-    Assign { ident: String, expr: Expr },
+    Assign { op: char, ident: String, expr: Expr },
     Ret(Expr),
     Expr(Expr),
 }
@@ -58,8 +58,8 @@ impl ToString for Stmt {
             Self::Let { ident, expr } => {
                 format!("let {} = {};", ident.to_string(), expr.to_string())
             }
-            Self::Assign { ident, expr } => {
-                format!("{} = {};", ident.to_string(), expr.to_string())
+            Self::Assign { op, ident, expr } => {
+                format!("{} = {}{};", ident.to_string(), op, expr.to_string())
             }
             Self::Ret(value) => {
                 format!("return {};", value.to_string())
@@ -74,11 +74,28 @@ pub enum Expr {
     Ident(String),
     Int(i64),
     Bool(bool),
-    Prefix { op: Token, value: Box<Expr> },
-    Infix { op: Token, left: Box<Expr>, right: Box<Expr> },
-    If { cond: Box<Expr>, csq: Vec<Stmt>, alt: Option<Vec<Stmt>> },
-    Fn { args: Vec<Expr>, body: Vec<Stmt> },
-    FnCall { ident: String, args: Vec<Expr> },
+    Prefix {
+        op: Token,
+        value: Box<Expr>,
+    },
+    Infix {
+        op: Token,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    If {
+        cond: Box<Expr>,
+        csq: Vec<Stmt>,
+        alt: Option<Vec<Stmt>>,
+    },
+    Fn {
+        args: Vec<Expr>,
+        body: Vec<Stmt>,
+    },
+    FnCall {
+        ident: String,
+        args: Vec<Expr>,
+    },
 }
 
 impl ToString for Expr {
@@ -90,7 +107,12 @@ impl ToString for Expr {
                 format!("({}{})", op.to_string(), value.to_string())
             }
             Self::Infix { op, left, right } => {
-                format!("({} {} {})", left.to_string(), op.to_string(), right.to_string())
+                format!(
+                    "({} {} {})",
+                    left.to_string(),
+                    op.to_string(),
+                    right.to_string()
+                )
             }
             Self::Bool(b) => b.to_string(),
             Self::If { cond, csq, alt } => {
@@ -124,8 +146,7 @@ impl ToString for Expr {
                         .map(|arg| arg.to_string())
                         .collect::<Vec<_>>()
                         .join(", "),
-                    body
-                        .iter()
+                    body.iter()
                         .map(|arg| arg.to_string())
                         .collect::<Vec<_>>()
                         .join("\n\t")

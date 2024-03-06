@@ -33,9 +33,9 @@ impl Lexer {
                     self.read_char();
                     Eq
                 } else {
-                    Assign
+                    Assign('\0')
                 }
-            },
+            }
             '!' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -43,17 +43,46 @@ impl Lexer {
                 } else {
                     Bang
                 }
-            },
-            '+' => Plus,
+            }
+            // '+' => Plus,
+            '+' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    Assign('+')
+                } else {
+                    Add
+                }
+            }
+            '-' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    Assign('-')
+                } else {
+                    Sub
+                }
+            }
+            '*' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    Assign('*')
+                } else {
+                    Mul
+                }
+            }
+            '/' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    Assign('/')
+                } else {
+                    Div
+                }
+            }
             '(' => Lparen,
             ')' => Rparen,
             '{' => Lbrace,
             '}' => Rbrace,
             ';' => Semicolon,
             ',' => Comma,
-            '-' => Minus,
-            '*' => Asterisk,
-            '/' => Slash,
             '<' => Lt,
             '>' => Gt,
             _ => {
@@ -151,7 +180,15 @@ mod tests {
     fn symbols() {
         let input = "=+(){},;";
         let tokens = vec![
-            Assign, Plus, Lparen, Rparen, Lbrace, Rbrace, Comma, Semicolon, Eof,
+            Assign('\0'),
+            Add,
+            Lparen,
+            Rparen,
+            Lbrace,
+            Rbrace,
+            Comma,
+            Semicolon,
+            Eof,
         ];
 
         lex_test(input, tokens);
@@ -163,12 +200,12 @@ mod tests {
         let tokens = vec![
             Let,
             Ident("five".to_string()),
-            Assign,
+            Assign('\0'),
             Int("5".to_string()),
             Semicolon,
             Let,
             Ident("ten".to_string()),
-            Assign,
+            Assign('\0'),
             Int("10".to_string()),
             Semicolon,
             Eof,
@@ -187,7 +224,7 @@ mod tests {
         let tokens = vec![
             Let,
             Ident("add".to_string()),
-            Assign,
+            Assign('\0'),
             Fn,
             Lparen,
             Ident("x".to_string()),
@@ -196,14 +233,14 @@ mod tests {
             Rparen,
             Lbrace,
             Ident("x".to_string()),
-            Plus,
+            Add,
             Ident("y".to_string()),
             Semicolon,
             Rbrace,
             Semicolon,
             Let,
             Ident("result".to_string()),
-            Assign,
+            Assign('\0'),
             Ident("add".to_string()),
             Lparen,
             Ident("five".to_string()),
@@ -226,9 +263,9 @@ mod tests {
 
         let tokens = vec![
             Bang,
-            Minus,
-            Slash,
-            Asterisk,
+            Sub,
+            Div,
+            Mul,
             Int("5".to_string()),
             Semicolon,
             Int("5".to_string()),

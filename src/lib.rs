@@ -1,5 +1,5 @@
-mod parser;
 mod eval;
+mod parser;
 
-pub use parser::Parser;
 pub use eval::Eval;
+pub use parser::Parser;
