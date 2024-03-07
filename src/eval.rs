@@ -1,21 +1,23 @@
-use crate::parser::ast::{Expr, Program, Stmt};
-use crate::parser::token::Token;
-use std::collections::HashMap;
+#![allow(unused, warnings)]
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Value {
+use crate::parser::{Expr, Program, Stmt, Token};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Object {
     Int(i64),
     Bool(bool),
+    Ret(Box<Object>),
     Nil,
 }
 
-use Value::*;
+use Object::*;
 
-impl std::fmt::Display for Value {
+impl std::fmt::Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let output = match self {
             Int(n) => n.to_string(),
             Bool(b) => b.to_string(),
+            Ret(value) => value.to_string(),
             Nil => "nil".to_string(),
         };
 
@@ -23,164 +25,206 @@ impl std::fmt::Display for Value {
     }
 }
 
-pub struct Eval {
-    bindings: HashMap<String, Value>,
+pub trait Eval {
+    fn eval(&self) -> Object;
 }
 
-impl Eval {
-    pub fn new() -> Self {
-        Self {
-            bindings: HashMap::new(),
-        }
-    }
-
-    pub fn eval(&mut self, program: Program) -> Value {
-        if !program.errors().is_empty() {
-            println!("{:?}", program.errors());
+impl Eval for Program {
+    fn eval(&self) -> Object {
+        if self.stmts().is_empty() || !self.errors().is_empty() {
+            return Nil;
         }
 
-        let mut value = Value::Nil;
+        let mut value = Nil;
 
-        for stmt in program.stmts() {
-            value = self.eval_stmt(stmt.clone());
+        for stmt in self.stmts() {
+            if let Ret(obj) = stmt.eval() {
+                return *obj;
+            } else {
+                value = stmt.eval();
+            }
         }
 
         value
     }
+}
 
-    fn eval_stmt(&mut self, stmt: Stmt) -> Value {
-        match stmt {
-            Stmt::Expr(expr) => self.eval_expr(expr),
-            Stmt::Let { ident, expr } => {
-                let value = self.eval_expr(expr);
-                self.bindings.insert(ident, value);
-                Nil
+impl Eval for Vec<Stmt> {
+    fn eval(&self) -> Object {
+        let mut value = Nil;
+
+        for stmt in self {
+            if let Ret(obj) = stmt.eval() {
+                return *obj;
+            } else {
+                value = stmt.eval();
             }
-            Stmt::Assign { op, ident, expr } => {
-                let binding = self.bindings.get(&ident);
+        }
 
-                if binding.is_none() {
-                    return Nil;
-                }
+        value
+    }
+}
 
-                let value = self.eval_expr(expr);
-                let binding = self.bindings.get_mut(&ident);
-
-                assert!(op == '\0' || op == '+' || op == '-' || op == '*' || op == '/');
-
-                if op == '\0' {
-                    *binding.unwrap() = value;
-                } else if let Some(Value::Int(n)) = binding {
-                    if let Value::Int(value) = value {
-                        match op {
-                            '+' => *n += value,
-                            '-' => *n -= value,
-                            '*' => *n *= value,
-                            '/' => {
-                                if let Some(value) = n.checked_div(value) {
-                                    *n = value;
-                                } else {
-                                    println!("syntax error");
-                                }
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                }
-
-                Nil
-            }
-            Stmt::Ret(expr) => self.eval_expr(expr),
+impl Eval for Stmt {
+    fn eval(&self) -> Object {
+        match self {
+            Self::Expr(expr) => expr.eval(),
+            Self::Ret(expr) => Object::Ret(Box::new(expr.eval())),
+            _ => Nil,
         }
     }
+}
 
-    fn eval_expr(&mut self, expr: Expr) -> Value {
-        match expr {
-            Expr::Int(n) => Int(n),
-            Expr::Bool(b) => Bool(b),
-            Expr::Ident(ident) => self.bindings.get(&ident).unwrap_or(&Value::Nil).clone(),
-            Expr::Prefix { op, value } => match op {
-                Token::Sub => match self.eval_expr(*value) {
-                    Int(n) => Int(-n),
-                    _ => Nil,
-                },
-                Token::Bang => match self.eval_expr(*value) {
-                    Bool(b) => Bool(!b),
-                    _ => Nil,
-                },
+impl Eval for Expr {
+    fn eval(&self) -> Object {
+        match self {
+            Self::Int(n) => Int(*n),
+            Self::Bool(b) => Bool(*b),
+            Self::Prefix { op, value } => match op {
+                Token::Bang => {
+                    if let Bool(b) = value.eval() {
+                        Bool(!b)
+                    } else {
+                        Nil
+                    }
+                }
+                Token::Sub => {
+                    if let Int(n) = value.eval() {
+                        Int(-n)
+                    } else {
+                        Nil
+                    }
+                }
                 _ => unreachable!(),
             },
-            Expr::Infix { op, left, right } => {
-                match (self.eval_expr(*left), self.eval_expr(*right)) {
-                    (Int(x), Int(y)) => match op {
-                        Token::Add => Int(x + y),
-                        Token::Sub => Int(x - y),
-                        Token::Mul => Int(x * y),
-                        Token::Div => {
-                            if let Some(value) = x.checked_div(y) {
-                                Int(value)
-                            } else {
-                                println!("syntax error");
-                                Nil
-                            }
+            Self::Infix { op, left, right } => match op {
+                Token::Add | Token::Sub | Token::Mul | Token::Div => {
+                    if let (Int(x), Int(y)) = (left.eval(), right.eval()) {
+                        match op {
+                            Token::Add => Int(x + y),
+                            Token::Sub => Int(x - y),
+                            Token::Mul => Int(x * y),
+                            Token::Div => Int(x / y),
+                            _ => unreachable!(),
                         }
-                        Token::Eq => Bool(x == y),
-                        Token::NotEq => Bool(x != y),
-                        Token::Lt => Bool(x < y),
-                        Token::Gt => Bool(x > y),
-                        _ => Nil,
-                    },
-                    (Bool(a), Bool(b)) => match op {
-                        Token::Eq => Bool(a == b),
-                        Token::NotEq => Bool(a != b),
-                        _ => Nil,
-                    },
-                    _ => Nil,
-                }
-            }
-            Expr::If { cond, csq, alt } => {
-                if let Bool(b) = self.eval_expr(*cond) {
-                    if b {
-                        let mut value = Nil;
-
-                        for stmt in csq {
-                            value = self.eval_stmt(stmt);
-                        }
-
-                        value
                     } else {
-                        if let Some(alt) = alt {
-                            let mut value = Nil;
-
-                            for stmt in alt {
-                                value = self.eval_stmt(stmt);
-                            }
-
-                            value
-                        } else {
-                            Nil
+                        Nil
+                    }
+                }
+                Token::Eq | Token::NotEq | Token::Gt | Token::Lt => {
+                    if let (Bool(x), Bool(y)) = (left.eval(), right.eval()) {
+                        match op {
+                            Token::Eq => Bool(x == y),
+                            Token::NotEq => Bool(x != y),
+                            Token::Lt => Bool(x < y),
+                            Token::Gt => Bool(x > y),
+                            _ => unreachable!(),
                         }
+                    } else {
+                        Nil
+                    }
+                }
+                _ => unreachable!(),
+            },
+            Self::Ident(ident) => todo!(),
+            Self::If { cond, csq, alt } => {
+                if let Bool(cond) = cond.eval() {
+                    if cond {
+                        csq.eval()
+                    } else {
+                        alt.eval()
                     }
                 } else {
                     Nil
                 }
             }
             _ => Nil,
-            // Expr::Fn { args, body } => {
-            //     todo!()
-            // }
-            // Expr::FnCall { ident, args } => {
-            //     todo!()
-            // },
         }
     }
 }
 
-#[test]
-fn assign() {
-    let input = "let x = 1; x = x + 1; x;";
-    let program = crate::parser::Parser::parse(input);
-    let mut eval = Eval::new();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Parser;
+    use Object::*;
 
-    assert_eq!(eval.eval(program), Value::Int(2));
+    fn eval(input: &str) -> Object {
+        let program = Parser::parse(input);
+        program.eval()
+    }
+
+    #[test]
+    fn int() {
+        let inputs = [
+            "4",
+            "10",
+            "12 + 12",
+            "10 - 5",
+            "12 * 12",
+            "10 / 5",
+            "2 * (2 - 2)",
+            "4 / (2 + 2)",
+        ];
+        let outputs = [4, 10, 24, 5, 144, 2, 0, 1];
+
+        for i in 0..3 {
+            assert_eq!(eval(inputs[i]), Int(outputs[i]));
+        }
+    }
+
+    #[test]
+    fn bool() {
+        let inputs = ["true", "false", "!true", "!false", "!!true", "!!false"];
+        let outputs = [true, false, false, true, true, false];
+
+        for i in 0..2 {
+            assert_eq!(eval(inputs[i]), Bool(outputs[i]));
+        }
+    }
+
+    #[test]
+    fn if_else() {
+        let inputs = [
+            "if (true) { 10 }",
+            "if (false) { 10 }",
+            "if (1 < 2) { 10 }",
+            "if (1 > 2) { 10 }",
+            "if (1 < 2) { 10 } else { 20 }",
+            "if (1 > 2) { 10 } else { 20 }",
+        ];
+
+        let outputs = [
+            Int(10),
+            Nil,
+            Int(10),
+            Nil,
+            Int(10),
+            Int(20),
+        ];
+
+        for i in 0..2 {
+            assert_eq!(eval(inputs[i]), outputs[i]);
+        }
+    }
+
+    #[test]
+    fn ret() {
+        let inputs = [
+            "return 10;",
+            "return 10; 9;",
+            "return 2 * 5; 9;",
+            "9; return 2 * 5; 9;",
+        ];
+
+        for i in 0..2 {
+            assert_eq!(eval(inputs[i]), Int(10));
+        }
+    }
+
+    #[test]
+    fn if_ret() {
+        let input = "if (true) { if (true) { return 1; } return 0; }";
+        assert_eq!(eval(input), Int(1));
+    }
 }

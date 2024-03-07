@@ -86,7 +86,7 @@ pub enum Expr {
     If {
         cond: Box<Expr>,
         csq: Vec<Stmt>,
-        alt: Option<Vec<Stmt>>,
+        alt: Vec<Stmt>,
     },
     Fn {
         args: Vec<Expr>,
@@ -126,7 +126,7 @@ impl ToString for Expr {
                         .join(""),
                 );
 
-                if let Some(alt) = alt {
+                if !alt.is_empty() {
                     output.push_str(&format!(
                         " else {{\n\t{}\n}}",
                         // alt.to_string()

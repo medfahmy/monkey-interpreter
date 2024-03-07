@@ -1,10 +1,10 @@
-pub(crate) mod ast;
-pub(crate) mod lexer;
-pub(crate) mod token;
+mod ast;
+mod lexer;
+mod token;
 
-use ast::{Expr, Program, Stmt};
-use lexer::Lexer;
-use token::Token;
+pub use ast::{Expr, Program, Stmt};
+pub use lexer::Lexer;
+pub use token::Token;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -213,14 +213,14 @@ impl Parser {
                     let csq = self.parse_block_stmt();
                     self.next_token();
 
-                    let mut alt = None;
+                    let mut alt = Vec::new();
 
                     if let Token::Else = self.curr_token {
                         self.next_token();
 
                         if let Token::Lbrace = self.curr_token {
                             self.next_token();
-                            alt = Some(self.parse_block_stmt());
+                            alt = self.parse_block_stmt();
                         }
                     }
 
@@ -602,7 +602,7 @@ mod tests {
             assert_eq!(cond.to_string(), "(x < y)");
             assert_eq!(csq.len(), 1);
             assert_eq!(csq[0].to_string(), "x");
-            assert_eq!(alt, None);
+            assert!(alt.is_empty());
         } else {
             panic!("expected if expr, got {:?}", stmts[0]);
         }
@@ -617,7 +617,6 @@ mod tests {
             assert_eq!(cond.to_string(), "(x < y)");
             assert_eq!(csq.len(), 1);
             assert_eq!(csq[0].to_string(), "x");
-            let alt = alt.unwrap();
             assert_eq!(alt.len(), 1);
             assert_eq!(alt[0].to_string(), "y");
         } else {

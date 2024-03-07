@@ -1,12 +1,9 @@
-use monkey::{Eval, Parser};
+use monkey::{Parser, Eval};
 use std::io::{stdin, stdout, Write};
 
 fn main() {
     let stdin = stdin();
     let mut stdout = stdout();
-
-    let mut eval = Eval::new();
-
     let prompt = ">> ";
 
     loop {
@@ -19,12 +16,11 @@ fn main() {
         println!();
 
         let program = Parser::parse(&buf);
-
-        // println!("{:?}", program);
-
         let errors = program.errors();
 
-        if !errors.is_empty() {
+        if errors.is_empty() {
+            println!("{}", program.eval());
+        } else {
             println!("parser errors: ");
 
             for error in errors {
@@ -32,12 +28,6 @@ fn main() {
             }
 
             println!();
-        } else {
-            println!("{}", eval.eval(program));
-
-            // println!("{:?}", program);
-            // println!();
-            // println!("{}", program.to_string());
         }
     }
 }

@@ -1,5 +1,5 @@
 mod eval;
 mod parser;
 
-pub use eval::Eval;
-pub use parser::Parser;
+pub use parser::{Parser, Program};
+pub use eval::{Eval, Object};
