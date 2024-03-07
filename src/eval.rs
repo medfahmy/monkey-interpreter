@@ -1,6 +1,25 @@
-#![allow(unused, warnings)]
-
+use std::collections::HashMap;
 use crate::parser::{Expr, Program, Stmt, Token};
+
+#[derive(Debug)]
+pub struct Env {
+    bindings: HashMap<String, Object>,
+}
+
+impl Env {
+    pub fn new() -> Self {
+        Self { bindings: HashMap::new() }
+    }
+
+    fn get(&self, ident: &String) -> Option<&Object> {
+        self.bindings.get(ident)
+    }
+
+    fn set(&mut self, ident: String, obj: Object) -> Object {
+        self.bindings.insert(ident, obj.clone());
+        obj
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Object {
@@ -35,11 +54,11 @@ impl std::fmt::Display for Object {
 }
 
 pub trait Eval {
-    fn eval(&self) -> Object;
+    fn eval(&self, env: &mut Env) -> Object;
 }
 
 impl Eval for Program {
-    fn eval(&self) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         if self.stmts().is_empty() || !self.errors().is_empty() {
             return Nil;
         }
@@ -47,7 +66,7 @@ impl Eval for Program {
         let mut value = Nil;
 
         for stmt in self.stmts() {
-            value = stmt.eval();
+            value = stmt.eval(env);
 
             if let Ret(obj) = value {
                 return *obj;
@@ -56,7 +75,7 @@ impl Eval for Program {
             match value {
                 Ret(obj) => return *obj,
                 Error(_) => return value,
-                _ => {},
+                _ => {}
             }
         }
 
@@ -65,15 +84,15 @@ impl Eval for Program {
 }
 
 impl Eval for Vec<Stmt> {
-    fn eval(&self) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         let mut value = Nil;
 
         for stmt in self {
-            value = stmt.eval();
+            value = stmt.eval(env);
 
             match value {
                 Ret(_) | Error(_) => return value,
-                _ => {},
+                _ => {}
             }
         }
 
@@ -82,89 +101,97 @@ impl Eval for Vec<Stmt> {
 }
 
 impl Eval for Stmt {
-    fn eval(&self) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         match self {
-            Self::Expr(expr) => expr.eval(),
-            Self::Ret(expr) => Object::Ret(Box::new(expr.eval())),
-            _ => Nil,
+            Self::Expr(expr) => expr.eval(env),
+            Self::Ret(expr) => {
+                if let Error(s) = expr.eval(env) {
+                    Error(s)
+                } else {
+                    Ret(Box::new(expr.eval(env)))
+                }
+            }
+            Self::Let { ident, expr } => {
+                match expr.eval(env) {
+                    Error(s) => Error(s),
+                    value => env.set(ident.to_string(), value),
+                }
+            },
+            _ => unimplemented!(),
         }
     }
 }
 
 impl Eval for Expr {
-    fn eval(&self) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         match self {
             Self::Int(n) => Int(*n),
             Self::Bool(b) => Bool(*b),
-            Self::Prefix { op, expr } => match op {
-                Token::Bang => match expr.eval() {
-                    Bool(b) => Bool(!b),
-                    Int(_) => Error("unknown operator: !Int".to_string()),
-                    _ => unreachable!(),
-                },
-                Token::Sub => match expr.eval() {
-                    Int(n) => Int(-n),
-                    Bool(_) => Error("unknown operator: -Bool".to_string()),
-                    _ => unreachable!(),
-                },
-                _ => unreachable!(),
-            },
-            Self::Infix { op, left, right } => match op {
-                Token::Add | Token::Sub | Token::Mul | Token::Div => {
-                    let (left, right) = (left.eval(), right.eval());
-
-                    match (left, right) {
-                        (Bool(_), Bool(_)) => {
-                            Error(format!("unknown operator: Bool {} Bool", op.to_string()))
-                        }
-                        (Bool(_), _) | (_, Bool(_)) => {
-                            Error(format!("type mismatch: Int {} Bool", op.to_string()))
-                        }
-                        (Int(x), Int(y)) => match op {
-                            Token::Add => Int(x + y),
-                            Token::Sub => Int(x - y),
-                            Token::Mul => Int(x * y),
-                            Token::Div => Int(x / y),
+            Self::Prefix { op, expr } => {
+                match expr.eval(env) {
+                    Error(s) => Error(s),
+                    Bool(b) => {
+                        match op {
+                            Token::Bang => Bool(!b),
+                            Token::Sub => Error("unknown operator: -Bool".to_string()),
                             _ => unreachable!(),
-                        },
-                        _ => unreachable!(),
+                        }
                     }
-                }
-                Token::Eq | Token::NotEq | Token::Gt | Token::Lt => {
-                    let (left, right) = (left.eval(), right.eval());
-
-                    match (left, right) {
-                        (Bool(_), Bool(_)) => {
-                            Error(format!("unknown operator: Bool {} Bool", op.to_string()))
-                        }
-                        (Bool(_), Int(_)) | (Int(_), Bool(_)) => {
-                            Error(format!("type mismatch: Bool {} Bool", op.to_string()))
-                        }
-                        (Int(x), Int(y)) => match op {
-                            Token::Eq => Bool(x == y),
-                            Token::NotEq => Bool(x != y),
-                            Token::Lt => Bool(x < y),
-                            Token::Gt => Bool(x > y),
+                    Int(n) => {
+                        match op {
+                            Token::Sub => Int(-n),
+                            Token::Bang => Error("unknown operator: !Int".to_string()),
                             _ => unreachable!(),
-                        },
-                        _ => unreachable!(),
+                        }
                     }
-                }
-                _ => unreachable!(),
-            },
-            Self::Ident(ident) => todo!(),
-            Self::If { cond, csq, alt } => {
-                if let Bool(cond) = cond.eval() {
-                    if cond {
-                        csq.eval()
-                    } else {
-                        alt.eval()
-                    }
-                } else {
-                    Nil
+                    _ => unreachable!(),
                 }
             }
-            _ => Nil,
+            Self::Infix { op, left, right } => {
+                match (left.eval(env), right.eval(env)) {
+                    (Error(s), _) => Error(s),
+                    (_, Error(s)) => Error(s),
+                    (Bool(_), Bool(_)) => {
+                        Error(format!("unknown operator: Bool {} Bool", op.to_string()))
+                    }
+                    (Bool(_), _) | (_, Bool(_)) => {
+                        Error(format!("type mismatch: Int {} Bool", op.to_string()))
+                    }
+                    (Int(x), Int(y)) => match op {
+                        Token::Add => Int(x + y),
+                        Token::Sub => Int(x - y),
+                        Token::Mul => Int(x * y),
+                        Token::Div => Int(x / y),
+                        Token::Eq => Bool(x == y),
+                        Token::NotEq => Bool(x != y),
+                        Token::Lt => Bool(x < y),
+                        Token::Gt => Bool(x > y),
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!(),
+                }
+            }
+            Self::If { cond, csq, alt } => {
+                match cond.eval(env) {
+                    Error(s) => Error(s),
+                    Bool(cond) => {
+                        if cond {
+                            csq.eval(env)
+                        } else {
+                            alt.eval(env)
+                        }
+                    },
+                    _ => unreachable!(),
+                }
+            }
+            Self::Ident(ident) => {
+                if let Some(value) = env.get(ident) {
+                    value.clone()
+                } else {
+                    Error(format!("identifier not found: {}", ident))
+                }
+            },
+            _ => unimplemented!(),
         }
     }
 }
@@ -173,11 +200,11 @@ impl Eval for Expr {
 mod tests {
     use super::*;
     use crate::Parser;
-    use Object::*;
 
     fn eval(input: &str) -> Object {
         let program = Parser::parse(input);
-        program.eval()
+        let mut env = Env::new();
+        program.eval(&mut env)
     }
 
     #[test]
@@ -274,7 +301,28 @@ mod tests {
         ];
 
         for i in 0..inputs.len() {
-            assert_eq!(eval(inputs[i]), Error(outputs[i].to_string()), "input: {}", inputs[i]);
+            assert_eq!(
+                eval(inputs[i]),
+                Error(outputs[i].to_string()),
+                "input: {}",
+                inputs[i]
+            );
         }
+    }
+
+    #[test]
+    fn let_ident() {
+        let inputs = [
+            "let x = 4; x;",
+            "let x = 2 * 2; x;",
+            "let x = 4; let y = x; y;",
+            "let x = 2; let y = x; let z = x + y; z",
+        ];
+
+        for input in inputs {
+            assert_eq!(eval(input), Int(4));
+        }
+
+        assert_eq!(eval("foobar"), Error("identifier not found: foobar".to_string()));
     }
 }

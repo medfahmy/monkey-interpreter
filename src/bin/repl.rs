@@ -1,9 +1,10 @@
-use monkey::{Parser, Eval};
+use monkey::{Parser, Eval, Env};
 use std::io::{stdin, stdout, Write};
 
 fn main() {
     let stdin = stdin();
     let mut stdout = stdout();
+    let mut env = Env::new();
     let prompt = ">> ";
 
     loop {
@@ -19,7 +20,7 @@ fn main() {
         let errors = program.errors();
 
         if errors.is_empty() {
-            println!("{}", program.eval());
+            println!("{}", program.eval(&mut env));
         } else {
             println!("parser errors: ");
 
