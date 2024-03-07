@@ -8,9 +8,17 @@ pub enum Object {
     Bool(bool),
     Ret(Box<Object>),
     Nil,
+    Error(String),
 }
 
 use Object::*;
+
+// struct RuntimeError {
+//     message: String,
+//     line: usize,
+//     row: usize,
+//     stacktrace: Any,
+// }
 
 impl std::fmt::Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -18,7 +26,8 @@ impl std::fmt::Display for Object {
             Int(n) => n.to_string(),
             Bool(b) => b.to_string(),
             Ret(value) => value.to_string(),
-            Nil => "nil".to_string(),
+            Nil => "Nil".to_string(),
+            Error(s) => s.clone(),
         };
 
         writeln!(f, "{}", output)
@@ -38,10 +47,16 @@ impl Eval for Program {
         let mut value = Nil;
 
         for stmt in self.stmts() {
-            if let Ret(obj) = stmt.eval() {
+            value = stmt.eval();
+
+            if let Ret(obj) = value {
                 return *obj;
-            } else {
-                value = stmt.eval();
+            }
+
+            match value {
+                Ret(obj) => return *obj,
+                Error(_) => return value,
+                _ => {},
             }
         }
 
@@ -54,10 +69,11 @@ impl Eval for Vec<Stmt> {
         let mut value = Nil;
 
         for stmt in self {
-            if let Ret(obj) = stmt.eval() {
-                return *obj;
-            } else {
-                value = stmt.eval();
+            value = stmt.eval();
+
+            match value {
+                Ret(_) | Error(_) => return value,
+                _ => {},
             }
         }
 
@@ -80,48 +96,58 @@ impl Eval for Expr {
         match self {
             Self::Int(n) => Int(*n),
             Self::Bool(b) => Bool(*b),
-            Self::Prefix { op, value } => match op {
-                Token::Bang => {
-                    if let Bool(b) = value.eval() {
-                        Bool(!b)
-                    } else {
-                        Nil
-                    }
-                }
-                Token::Sub => {
-                    if let Int(n) = value.eval() {
-                        Int(-n)
-                    } else {
-                        Nil
-                    }
-                }
+            Self::Prefix { op, expr } => match op {
+                Token::Bang => match expr.eval() {
+                    Bool(b) => Bool(!b),
+                    Int(_) => Error("unknown operator: !Int".to_string()),
+                    _ => unreachable!(),
+                },
+                Token::Sub => match expr.eval() {
+                    Int(n) => Int(-n),
+                    Bool(_) => Error("unknown operator: -Bool".to_string()),
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
             Self::Infix { op, left, right } => match op {
                 Token::Add | Token::Sub | Token::Mul | Token::Div => {
-                    if let (Int(x), Int(y)) = (left.eval(), right.eval()) {
-                        match op {
+                    let (left, right) = (left.eval(), right.eval());
+
+                    match (left, right) {
+                        (Bool(_), Bool(_)) => {
+                            Error(format!("unknown operator: Bool {} Bool", op.to_string()))
+                        }
+                        (Bool(_), _) | (_, Bool(_)) => {
+                            Error(format!("type mismatch: Int {} Bool", op.to_string()))
+                        }
+                        (Int(x), Int(y)) => match op {
                             Token::Add => Int(x + y),
                             Token::Sub => Int(x - y),
                             Token::Mul => Int(x * y),
                             Token::Div => Int(x / y),
                             _ => unreachable!(),
-                        }
-                    } else {
-                        Nil
+                        },
+                        _ => unreachable!(),
                     }
                 }
                 Token::Eq | Token::NotEq | Token::Gt | Token::Lt => {
-                    if let (Bool(x), Bool(y)) = (left.eval(), right.eval()) {
-                        match op {
+                    let (left, right) = (left.eval(), right.eval());
+
+                    match (left, right) {
+                        (Bool(_), Bool(_)) => {
+                            Error(format!("unknown operator: Bool {} Bool", op.to_string()))
+                        }
+                        (Bool(_), Int(_)) | (Int(_), Bool(_)) => {
+                            Error(format!("type mismatch: Bool {} Bool", op.to_string()))
+                        }
+                        (Int(x), Int(y)) => match op {
                             Token::Eq => Bool(x == y),
                             Token::NotEq => Bool(x != y),
                             Token::Lt => Bool(x < y),
                             Token::Gt => Bool(x > y),
                             _ => unreachable!(),
-                        }
-                    } else {
-                        Nil
+                        },
+                        _ => unreachable!(),
                     }
                 }
                 _ => unreachable!(),
@@ -184,6 +210,7 @@ mod tests {
     }
 
     #[test]
+    // #[ignore]
     fn if_else() {
         let inputs = [
             "if (true) { 10 }",
@@ -194,14 +221,7 @@ mod tests {
             "if (1 > 2) { 10 } else { 20 }",
         ];
 
-        let outputs = [
-            Int(10),
-            Nil,
-            Int(10),
-            Nil,
-            Int(10),
-            Int(20),
-        ];
+        let outputs = [Int(10), Nil, Int(10), Nil, Int(10), Int(20)];
 
         for i in 0..2 {
             assert_eq!(eval(inputs[i]), outputs[i]);
@@ -223,8 +243,38 @@ mod tests {
     }
 
     #[test]
+    // #[ignore]
     fn if_ret() {
         let input = "if (true) { if (true) { return 1; } return 0; }";
         assert_eq!(eval(input), Int(1));
+    }
+
+    #[test]
+    fn errors() {
+        let inputs = [
+            "5 + true;",
+            "5 + true; -5;",
+            "!5",
+            "-true;",
+            "true + false;",
+            "5; true + false; 5;",
+            "if (10 > 1) { true + false; }",
+            "if (10 > 1) { if (10 > 1) { return true + false; } return 1; }",
+        ];
+
+        let outputs = [
+            "type mismatch: Int + Bool",
+            "type mismatch: Int + Bool",
+            "unknown operator: !Int",
+            "unknown operator: -Bool",
+            "unknown operator: Bool + Bool",
+            "unknown operator: Bool + Bool",
+            "unknown operator: Bool + Bool",
+            "unknown operator: Bool + Bool",
+        ];
+
+        for i in 0..inputs.len() {
+            assert_eq!(eval(inputs[i]), Error(outputs[i].to_string()), "input: {}", inputs[i]);
+        }
     }
 }

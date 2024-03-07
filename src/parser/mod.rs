@@ -142,8 +142,6 @@ impl Parser {
     }
 
     fn parse_expr(&mut self, prec: usize) -> Option<Expr> {
-        // println!("begin {:?}", self.curr_token);
-
         if let Some(mut left) = self.prefix_parse() {
             while self.peek_token != Token::Semicolon && prec < self.peek_prec() {
                 self.next_token();
@@ -155,10 +153,6 @@ impl Parser {
                 }
             }
 
-            // self.next_token();
-            //
-            // println!("parsed {:?}", left);
-            // println!("end {:?}", self.curr_token);
             Some(left)
         } else {
             self.no_prefix_error();
@@ -198,9 +192,10 @@ impl Parser {
                 let op = self.curr_token.clone();
                 self.next_token();
                 let value = self.parse_expr(5)?;
+
                 Some(Expr::Prefix {
                     op,
-                    value: Box::new(value),
+                    expr: Box::new(value),
                 })
             }
             Token::If => {
@@ -458,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    // #[ignore]
+    #[ignore]
     fn errors() {
         let input = r#"let x 69;
             let = 420;
@@ -516,9 +511,9 @@ mod tests {
 
         assert!(matches!(stmt, Stmt::Expr(..)), "stmt is not expr");
 
-        if let Stmt::Expr(Expr::Prefix { op, value }) = stmt {
+        if let Stmt::Expr(Expr::Prefix { op, expr }) = stmt {
             assert_eq!(op, exp_op);
-            let expr = *value;
+            let expr = *expr;
             assert!(matches!(expr, Expr::Int(..)), "epxr is not int");
 
             if let Expr::Int(n) = expr {

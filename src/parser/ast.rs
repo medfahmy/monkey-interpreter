@@ -76,7 +76,7 @@ pub enum Expr {
     Bool(bool),
     Prefix {
         op: Token,
-        value: Box<Expr>,
+        expr: Box<Expr>,
     },
     Infix {
         op: Token,
@@ -103,7 +103,7 @@ impl ToString for Expr {
         match self {
             Self::Ident(name) => name.to_string(),
             Self::Int(n) => n.to_string(),
-            Self::Prefix { op, value } => {
+            Self::Prefix { op, expr: value } => {
                 format!("({}{})", op.to_string(), value.to_string())
             }
             Self::Infix { op, left, right } => {
