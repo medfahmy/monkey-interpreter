@@ -1,18 +1,39 @@
-use std::collections::HashMap;
 use crate::parser::{Expr, Program, Stmt, Token};
+use std::collections::HashMap;
 
-#[derive(Debug)]
-pub struct Env {
+#[derive(Debug, Clone)]
+pub struct Env<'a> {
     bindings: HashMap<String, Object>,
+    outer: Option<&'a Env<'a>>,
 }
 
-impl Env {
+impl<'a> Env<'a> {
     pub fn new() -> Self {
-        Self { bindings: HashMap::new() }
+        Self {
+            bindings: HashMap::new(),
+            outer: None,
+        }
+    }
+
+    pub fn extend(&'a self) -> Self {
+        Self {
+            bindings: HashMap::new(),
+            outer: Some(self),
+        }
     }
 
     fn get(&self, ident: &String) -> Option<&Object> {
-        self.bindings.get(ident)
+        let obj =  self.bindings.get(ident);
+
+        if obj.is_some() {
+            return obj;
+        }
+
+        if let Some(outer) = self.outer {
+            outer.get(ident)
+        } else {
+            None
+        }
     }
 
     fn set(&mut self, ident: String, obj: Object) -> Object {
@@ -25,28 +46,35 @@ impl Env {
 pub enum Object {
     Int(i64),
     Bool(bool),
-    Ret(Box<Object>),
+    Return(Box<Object>),
     Nil,
     Error(String),
+    Function {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
 }
 
 use Object::*;
-
-// struct RuntimeError {
-//     message: String,
-//     line: usize,
-//     row: usize,
-//     stacktrace: Any,
-// }
 
 impl std::fmt::Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let output = match self {
             Int(n) => n.to_string(),
             Bool(b) => b.to_string(),
-            Ret(value) => value.to_string(),
-            Nil => "Nil".to_string(),
+            Return(value) => value.to_string(),
+            Function { params, body } => {
+                format!(
+                    "fn({}) {{\n\t {}\n}}",
+                    params.join(", "),
+                    body.iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n\t")
+                )
+            }
             Error(s) => s.clone(),
+            Nil => "Nil".to_string(),
         };
 
         writeln!(f, "{}", output)
@@ -68,12 +96,12 @@ impl Eval for Program {
         for stmt in self.stmts() {
             value = stmt.eval(env);
 
-            if let Ret(obj) = value {
+            if let Return(obj) = value {
                 return *obj;
             }
 
             match value {
-                Ret(obj) => return *obj,
+                Return(obj) => return *obj,
                 Error(_) => return value,
                 _ => {}
             }
@@ -91,7 +119,7 @@ impl Eval for Vec<Stmt> {
             value = stmt.eval(env);
 
             match value {
-                Ret(_) | Error(_) => return value,
+                Return(_) | Error(_) => return value,
                 _ => {}
             }
         }
@@ -104,18 +132,13 @@ impl Eval for Stmt {
     fn eval(&self, env: &mut Env) -> Object {
         match self {
             Self::Expr(expr) => expr.eval(env),
-            Self::Ret(expr) => {
-                if let Error(s) = expr.eval(env) {
-                    Error(s)
-                } else {
-                    Ret(Box::new(expr.eval(env)))
-                }
-            }
-            Self::Let { ident, expr } => {
-                match expr.eval(env) {
-                    Error(s) => Error(s),
-                    value => env.set(ident.to_string(), value),
-                }
+            Self::Ret(expr) => match expr.eval(env) {
+                Error(s) => Error(s),
+                value => Return(Box::new(value)),
+            },
+            Self::Let { ident, expr } => match expr.eval(env) {
+                Error(s) => Error(s),
+                value => env.set(ident.to_string(), value),
             },
             _ => unimplemented!(),
         }
@@ -127,71 +150,99 @@ impl Eval for Expr {
         match self {
             Self::Int(n) => Int(*n),
             Self::Bool(b) => Bool(*b),
-            Self::Prefix { op, expr } => {
-                match expr.eval(env) {
-                    Error(s) => Error(s),
-                    Bool(b) => {
-                        match op {
-                            Token::Bang => Bool(!b),
-                            Token::Sub => Error("unknown operator: -Bool".to_string()),
-                            _ => unreachable!(),
-                        }
-                    }
-                    Int(n) => {
-                        match op {
-                            Token::Sub => Int(-n),
-                            Token::Bang => Error("unknown operator: !Int".to_string()),
-                            _ => unreachable!(),
-                        }
-                    }
+            Self::Prefix { op, expr } => match expr.eval(env) {
+                Error(s) => Error(s),
+                Bool(b) => match op {
+                    Token::Bang => Bool(!b),
+                    Token::Sub => Error("unknown operator: -Bool".to_string()),
                     _ => unreachable!(),
-                }
-            }
-            Self::Infix { op, left, right } => {
-                match (left.eval(env), right.eval(env)) {
-                    (Error(s), _) => Error(s),
-                    (_, Error(s)) => Error(s),
-                    (Bool(_), Bool(_)) => {
-                        Error(format!("unknown operator: Bool {} Bool", op.to_string()))
-                    }
-                    (Bool(_), _) | (_, Bool(_)) => {
-                        Error(format!("type mismatch: Int {} Bool", op.to_string()))
-                    }
-                    (Int(x), Int(y)) => match op {
-                        Token::Add => Int(x + y),
-                        Token::Sub => Int(x - y),
-                        Token::Mul => Int(x * y),
-                        Token::Div => Int(x / y),
-                        Token::Eq => Bool(x == y),
-                        Token::NotEq => Bool(x != y),
-                        Token::Lt => Bool(x < y),
-                        Token::Gt => Bool(x > y),
-                        _ => unreachable!(),
-                    },
+                },
+                Int(n) => match op {
+                    Token::Sub => Int(-n),
+                    Token::Bang => Error("unknown operator: !Int".to_string()),
                     _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+            Self::Infix { op, left, right } => match (left.eval(env), right.eval(env)) {
+                (Error(s), _) => Error(s),
+                (_, Error(s)) => Error(s),
+                (Bool(_), Bool(_)) => {
+                    Error(format!("unknown operator: Bool {} Bool", op.to_string()))
                 }
-            }
-            Self::If { cond, csq, alt } => {
-                match cond.eval(env) {
-                    Error(s) => Error(s),
-                    Bool(cond) => {
-                        if cond {
-                            csq.eval(env)
-                        } else {
-                            alt.eval(env)
-                        }
-                    },
+                (Bool(_), _) | (_, Bool(_)) => {
+                    Error(format!("type mismatch: Int {} Bool", op.to_string()))
+                }
+                (Int(x), Int(y)) => match op {
+                    Token::Add => Int(x + y),
+                    Token::Sub => Int(x - y),
+                    Token::Mul => Int(x * y),
+                    Token::Div => Int(x / y),
+                    Token::Eq => Bool(x == y),
+                    Token::NotEq => Bool(x != y),
+                    Token::Lt => Bool(x < y),
+                    Token::Gt => Bool(x > y),
                     _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+            Self::If { cond, csq, alt } => match cond.eval(env) {
+                Error(s) => Error(s),
+                Bool(cond) => {
+                    if cond {
+                        csq.eval(env)
+                    } else {
+                        alt.eval(env)
+                    }
                 }
-            }
+                _ => unreachable!(),
+            },
             Self::Ident(ident) => {
                 if let Some(value) = env.get(ident) {
                     value.clone()
                 } else {
-                    Error(format!("identifier not found: {}", ident))
+                    Error(format!("identifier not found: '{}'", ident))
                 }
+            }
+            Self::Fn { params, body } => Function {
+                params: params.clone(),
+                body: body.clone(),
             },
-            _ => unimplemented!(),
+            Self::FnCall { ident, args } => {
+                if let Some(obj) = env.get(ident).cloned() {
+                    if let Function { params, body } = obj {
+                        if args.len() != params.len() {
+                            return Error(format!(
+                                "function '{}' expected {} parameters, got {}",
+                                ident,
+                                params.len(),
+                                args.len()
+                            ));
+                        }
+
+                        let mut local_env = env.extend();
+                        let mut values = Vec::new();
+
+                        for arg in args {
+                            match arg.eval(&mut local_env) {
+                                Error(s) => return Error(s),
+                                obj => values.push(obj),
+                            }
+                        }
+
+
+                        for i in 0..args.len() {
+                            local_env.set(params[i].clone(), values[i].clone());
+                        }
+
+                        body.eval(&mut local_env)
+                    } else {
+                        Error(format!("identifier is not a function: '{}'", ident))
+                    }
+                } else {
+                    Error(format!("identifier not found: '{}'", ident))
+                }
+            }
         }
     }
 }
@@ -323,6 +374,31 @@ mod tests {
             assert_eq!(eval(input), Int(4));
         }
 
-        assert_eq!(eval("foobar"), Error("identifier not found: foobar".to_string()));
+        assert_eq!(
+            eval("foobar"),
+            Error("identifier not found: 'foobar'".to_string())
+        );
+    }
+
+    #[test]
+    fn func() {
+        let input = "fn(x) { x + 2; };";
+        match eval(input) {
+            Function { params, body } => {
+                assert_eq!(params, vec!["x"]);
+                assert_eq!(body[0].to_string(), "(x + 2)");
+            }
+            v => panic!("expected function, got '{:?}'", v),
+        }
+    }
+
+    #[test]
+    fn fn_call() {
+        let input = r#"
+            let y = 1;
+            let add = fn(x) { return x + y; }; 
+            add(1);
+        "#;
+        assert_eq!(eval(input), Int(2));
     }
 }

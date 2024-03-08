@@ -64,7 +64,9 @@ impl ToString for Stmt {
             Self::Ret(value) => {
                 format!("return {};", value.to_string())
             }
-            Self::Expr(expr) => expr.to_string(),
+            Self::Expr(expr) => {
+                format!("{}", expr.to_string())
+            }
         }
     }
 }
@@ -89,7 +91,7 @@ pub enum Expr {
         alt: Vec<Stmt>,
     },
     Fn {
-        args: Vec<Expr>,
+        params: Vec<String>,
         body: Vec<Stmt>,
     },
     FnCall {
@@ -139,13 +141,10 @@ impl ToString for Expr {
 
                 output
             }
-            Self::Fn { args, body } => {
+            Self::Fn { params: args, body } => {
                 format!(
-                    "fn({}) {{\n\t {}\n }}",
-                    args.iter()
-                        .map(|arg| arg.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    "fn({}) {{\n\t{}\n}}",
+                    args.join(", "),
                     body.iter()
                         .map(|arg| arg.to_string())
                         .collect::<Vec<_>>()

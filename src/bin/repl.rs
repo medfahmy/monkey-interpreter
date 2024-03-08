@@ -1,4 +1,4 @@
-use monkey::{Parser, Eval, Env};
+use monkey::{Env, Eval, Parser};
 use std::io::{stdin, stdout, Write};
 
 fn main() {

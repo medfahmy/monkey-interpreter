@@ -79,21 +79,21 @@ impl Parser {
 
                 let stmt = self.parse_expr_stmt();
 
-                if let Stmt::Expr(value) = stmt.as_ref().unwrap() {
+                if let Some(Stmt::Expr(value)) = stmt.as_ref() {
                     Some(Stmt::Let {
                         ident: name,
                         expr: value.clone(),
                     })
                 } else {
                     self.program.push_error(format!(
-                        "expected expression, got {} instead",
-                        stmt.unwrap().to_string()
+                        "expected expression, found {:?}",
+                        self.curr_token
                     ));
                     None
                 }
             } else {
                 self.program.push_error(format!(
-                    "expected Assign, got {:?} instead",
+                    "expected Assign, found {:?}",
                     self.peek_token
                 ));
 
@@ -105,7 +105,7 @@ impl Parser {
             }
         } else {
             self.program
-                .push_error(format!("expected Ident, got {:?} instead", self.peek_token));
+                .push_error(format!("expected Ident, found {:?}", self.peek_token));
             None
         }
     }
@@ -124,7 +124,7 @@ impl Parser {
             Some(Stmt::Ret(expr))
         } else {
             self.program.push_error(format!(
-                "expected expression, got {} instead",
+                "expected expression, found {}",
                 stmt.to_string()
             ));
             None
@@ -166,7 +166,7 @@ impl Parser {
                 if self.peek_token == Token::Lparen {
                     self.next_token();
 
-                    let args = self.parse_call_args()?;
+                    let args = self.parse_args();
                     self.next_token();
 
                     Some(Expr::FnCall { ident, args })
@@ -231,23 +231,24 @@ impl Parser {
             }
             Token::Fn => {
                 self.next_token();
+
                 if let Token::Lparen = self.curr_token {
-                    self.next_token();
-                    let args = self.parse_fn_args()?;
+                    let params = self.parse_params();
 
                     if let Token::Lbrace = self.curr_token {
                         self.next_token();
                         let body = self.parse_block_stmt();
+                        self.next_token();
 
-                        return Some(Expr::Fn { args, body });
+                        return Some(Expr::Fn { params, body });
                     } else {
                         self.program
-                            .push_error(format!("expected Rparen, found {:?}", self.curr_token));
+                            .push_error(format!("expected Lbrace, found {:?}", self.curr_token));
                         return None;
                     }
                 } else {
                     self.program
-                        .push_error(format!("expected Lbrace, found {:?}", self.curr_token));
+                        .push_error(format!("expected Lparen, found {:?}", self.curr_token));
                     return None;
                 }
             }
@@ -268,62 +269,53 @@ impl Parser {
         stmts
     }
 
-    fn parse_fn_args(&mut self) -> Option<Vec<Expr>> {
+    fn parse_params(&mut self) -> Vec<String> {
         let mut exprs = Vec::new();
+        self.next_token();
 
-        while self.curr_token != Token::Eof {
+        while self.curr_token != Token::Rparen {
             if let Some(Expr::Ident(ident)) = self.parse_expr(0) {
-                exprs.push(Expr::Ident(ident));
+                exprs.push(ident);
                 self.next_token();
 
-                if let Token::Rparen = self.curr_token {
+                if let Token::Comma = self.curr_token {
                     self.next_token();
-                    return Some(exprs);
-                } else if let Token::Comma = self.curr_token {
-                    self.next_token();
-                } else {
-                    self.program
-                        .push_error(format!("expected Comma, found {:?}", self.curr_token));
-                    return None;
+                    continue;
                 }
             } else {
                 self.program
                     .push_error(format!("expected Ident, found {:?}", self.curr_token));
-                return None;
+                return exprs;
             }
         }
 
-        Some(exprs)
+        self.next_token();
+        exprs
     }
 
-    fn parse_call_args(&mut self) -> Option<Vec<Expr>> {
+    fn parse_args(&mut self) -> Vec<Expr> {
         let mut exprs = Vec::new();
-
         self.next_token();
 
-        while self.curr_token != Token::Eof {
+        while self.curr_token != Token::Rparen {
             if let Some(expr) = self.parse_expr(0) {
                 exprs.push(expr);
                 self.next_token();
 
                 if let Token::Rparen = self.curr_token {
                     self.next_token();
-                    return Some(exprs);
+                    return exprs;
                 } else if let Token::Comma = self.curr_token {
                     self.next_token();
                 } else {
                     self.program
                         .push_error(format!("expected Comma, found {:?}", self.curr_token));
-                    return None;
+                    return exprs;
                 }
-            } else {
-                self.program
-                    .push_error(format!("expected Ident, found {:?}", self.curr_token));
-                return None;
             }
         }
 
-        Some(exprs)
+        exprs
     }
 
     fn infix_parse(&mut self, left: &Expr) -> Option<Expr> {
@@ -351,7 +343,6 @@ impl Parser {
     }
 
     fn parse_grouped_expr(&mut self) -> Option<Expr> {
-        // println!("begin grouped {:?}", self.curr_token);
         self.next_token();
         let expr = self.parse_expr(0);
 
@@ -361,7 +352,6 @@ impl Parser {
         }
 
         self.next_token();
-        // println!("end grouped {:?}", self.curr_token);
         expr
     }
 
@@ -599,7 +589,7 @@ mod tests {
             assert_eq!(csq[0].to_string(), "x");
             assert!(alt.is_empty());
         } else {
-            panic!("expected if expr, got {:?}", stmts[0]);
+            panic!("expected if expr, found {:?}", stmts[0]);
         }
     }
 
@@ -615,7 +605,7 @@ mod tests {
             assert_eq!(alt.len(), 1);
             assert_eq!(alt[0].to_string(), "y");
         } else {
-            panic!("expected if expr, got {:?}", stmts[0]);
+            panic!("expected if expr, found {:?}", stmts[0]);
         }
     }
 
@@ -624,15 +614,15 @@ mod tests {
         let input = "fn(x, y) { return x + y }";
         let stmts = parse_test(input, 1, 0);
 
-        if let Stmt::Expr(Expr::Fn { args, body }) = stmts[0].clone() {
-            assert_eq!(args.len(), 2);
-            assert_eq!(args[0].to_string(), "x");
-            assert_eq!(args[1].to_string(), "y");
+        if let Stmt::Expr(Expr::Fn { params, body }) = stmts[0].clone() {
+            assert_eq!(params.len(), 2);
+            assert_eq!(params[0].to_string(), "x");
+            assert_eq!(params[1].to_string(), "y");
 
             assert_eq!(body.len(), 1);
             assert_eq!(body[0].to_string(), "return (x + y);");
         } else {
-            panic!("expected fn expr, got {:?}", stmts[0]);
+            panic!("expected fn expr, found {:?}", stmts[0]);
         }
     }
 
@@ -647,7 +637,7 @@ mod tests {
             assert_eq!(args[0].to_string(), "1");
             assert_eq!(args[1].to_string(), "2");
         } else {
-            panic!("expected call expr, got {:?}", stmts[0]);
+            panic!("expected call expr, found {:?}", stmts[0]);
         }
     }
 }
