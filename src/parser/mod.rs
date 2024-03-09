@@ -1,3 +1,5 @@
+#![allow(unused, warnings)]
+
 mod ast;
 mod lexer;
 mod token;
@@ -85,21 +87,13 @@ impl Parser {
                         expr: value.clone(),
                     })
                 } else {
-                    self.program.push_error(format!(
-                        "expected expression, found {:?}",
-                        self.curr_token
-                    ));
+                    self.program
+                        .push_error(format!("expected expression, found {:?}", self.curr_token));
                     None
                 }
             } else {
-                self.program.push_error(format!(
-                    "expected Assign, found {:?}",
-                    self.peek_token
-                ));
-
-                while self.curr_token != Token::Semicolon {
-                    self.next_token();
-                }
+                self.program
+                    .push_error(format!("expected Assign, found {:?}", self.peek_token));
 
                 None
             }
@@ -123,10 +117,8 @@ impl Parser {
         if let Stmt::Expr(expr) = stmt {
             Some(Stmt::Ret(expr))
         } else {
-            self.program.push_error(format!(
-                "expected expression, found {}",
-                stmt.to_string()
-            ));
+            self.program
+                .push_error(format!("expected expression, found {}", stmt.to_string()));
             None
         }
     }
@@ -165,9 +157,7 @@ impl Parser {
             Token::Ident(ident) => {
                 if self.peek_token == Token::Lparen {
                     self.next_token();
-
                     let args = self.parse_args();
-                    self.next_token();
 
                     Some(Expr::FnCall { ident, args })
                 } else {
@@ -235,6 +225,14 @@ impl Parser {
                 if let Token::Lparen = self.curr_token {
                     let params = self.parse_params();
 
+                    if let Token::Rparen = self.curr_token {
+                        self.next_token();
+                    } else {
+                        self.program
+                            .push_error(format!("expected Rparen, found {:?}", self.curr_token));
+                        return None;
+                    }
+
                     if let Token::Lbrace = self.curr_token {
                         self.next_token();
                         let body = self.parse_block_stmt();
@@ -270,52 +268,55 @@ impl Parser {
     }
 
     fn parse_params(&mut self) -> Vec<String> {
-        let mut exprs = Vec::new();
+        let mut params = Vec::new();
         self.next_token();
 
         while self.curr_token != Token::Rparen {
             if let Some(Expr::Ident(ident)) = self.parse_expr(0) {
-                exprs.push(ident);
+                params.push(ident);
                 self.next_token();
 
-                if let Token::Comma = self.curr_token {
-                    self.next_token();
-                    continue;
+                match &self.curr_token {
+                    Token::Rparen => return params,
+                    Token::Comma => self.next_token(),
+                    token => {
+                        self.program
+                            .push_error(format!("expected Comma or Rparen, found '{:?}'", token));
+                        return vec![];
+                    }
                 }
             } else {
                 self.program
                     .push_error(format!("expected Ident, found {:?}", self.curr_token));
-                return exprs;
+                return vec![];
             }
         }
 
-        self.next_token();
-        exprs
+        params
     }
 
     fn parse_args(&mut self) -> Vec<Expr> {
-        let mut exprs = Vec::new();
+        let mut args = Vec::new();
         self.next_token();
 
         while self.curr_token != Token::Rparen {
             if let Some(expr) = self.parse_expr(0) {
-                exprs.push(expr);
+                args.push(expr);
                 self.next_token();
 
-                if let Token::Rparen = self.curr_token {
-                    self.next_token();
-                    return exprs;
-                } else if let Token::Comma = self.curr_token {
-                    self.next_token();
-                } else {
-                    self.program
-                        .push_error(format!("expected Comma, found {:?}", self.curr_token));
-                    return exprs;
+                match &self.curr_token {
+                    Token::Rparen => return args,
+                    Token::Comma => self.next_token(),
+                    token => {
+                        self.program
+                            .push_error(format!("expected Comma or Rparen, found '{:?}'", token));
+                        return vec![];
+                    }
                 }
             }
         }
 
-        exprs
+        args
     }
 
     fn infix_parse(&mut self, left: &Expr) -> Option<Expr> {
@@ -332,6 +333,7 @@ impl Parser {
                 let prec = self.curr_prec();
                 self.next_token();
                 let right = self.parse_expr(prec)?;
+
                 Some(Expr::Infix {
                     op,
                     left: Box::new(left.clone()),
@@ -639,5 +641,14 @@ mod tests {
         } else {
             panic!("expected call expr, found {:?}", stmts[0]);
         }
+    }
+
+    #[test]
+    fn double_call() {
+        let input = "add(1, 2) + add(1, 2)";
+        let stmts = parse_test(input, 1, 0);
+
+        assert_eq!(stmts.len(), 1);
+        assert_eq!(stmts[0].to_string(), "(add(1, 2) + add(1, 2))");
     }
 }

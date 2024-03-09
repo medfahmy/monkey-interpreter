@@ -1,13 +1,13 @@
 use crate::parser::{Expr, Program, Stmt, Token};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
-pub struct Env<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Env {
     bindings: HashMap<String, Object>,
-    outer: Option<&'a Env<'a>>,
+    outer: Option<Box<Env>>,
 }
 
-impl<'a> Env<'a> {
+impl Env {
     pub fn new() -> Self {
         Self {
             bindings: HashMap::new(),
@@ -15,21 +15,21 @@ impl<'a> Env<'a> {
         }
     }
 
-    pub fn extend(&'a self) -> Self {
+    fn extend(&self) -> Self {
         Self {
             bindings: HashMap::new(),
-            outer: Some(self),
+            outer: Some(Box::new(self.clone())),
         }
     }
 
-    fn get(&self, ident: &String) -> Option<&Object> {
-        let obj =  self.bindings.get(ident);
+    fn get(&self, ident: &String) -> Option<Object> {
+        let obj = self.bindings.get(ident).cloned();
 
         if obj.is_some() {
             return obj;
         }
 
-        if let Some(outer) = self.outer {
+        if let Some(outer) = self.outer.clone() {
             outer.get(ident)
         } else {
             None
@@ -52,6 +52,7 @@ pub enum Object {
     Function {
         params: Vec<String>,
         body: Vec<Stmt>,
+        env: Box<Env>,
     },
 }
 
@@ -63,7 +64,11 @@ impl std::fmt::Display for Object {
             Int(n) => n.to_string(),
             Bool(b) => b.to_string(),
             Return(value) => value.to_string(),
-            Function { params, body } => {
+            Function {
+                params,
+                body,
+                env: _,
+            } => {
                 format!(
                     "fn({}) {{\n\t {}\n}}",
                     params.join(", "),
@@ -82,11 +87,11 @@ impl std::fmt::Display for Object {
 }
 
 pub trait Eval {
-    fn eval(&self, env: &mut Env) -> Object;
+    fn eval<'a>(&'a self, env: &'a mut Env) -> Object;
 }
 
 impl Eval for Program {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval<'a>(&'a self, env: &'a mut Env) -> Object {
         if self.stmts().is_empty() || !self.errors().is_empty() {
             return Nil;
         }
@@ -204,13 +209,18 @@ impl Eval for Expr {
                     Error(format!("identifier not found: '{}'", ident))
                 }
             }
-            Self::Fn { params, body } => Function {
-                params: params.clone(),
-                body: body.clone(),
-            },
+            Self::Fn { params, body } => {
+                let function = Function {
+                    params: params.clone(),
+                    body: body.clone(),
+                    env: Box::new(env.clone()),
+                };
+
+                function
+            }
             Self::FnCall { ident, args } => {
-                if let Some(obj) = env.get(ident).cloned() {
-                    if let Function { params, body } = obj {
+                if let Some(obj) = env.get(ident) {
+                    if let Function { params, body, env } = obj {
                         if args.len() != params.len() {
                             return Error(format!(
                                 "function '{}' expected {} parameters, got {}",
@@ -230,12 +240,14 @@ impl Eval for Expr {
                             }
                         }
 
-
                         for i in 0..args.len() {
                             local_env.set(params[i].clone(), values[i].clone());
                         }
 
-                        body.eval(&mut local_env)
+                        match body.eval(&mut local_env) {
+                            Return(obj) => *obj,
+                            obj => obj,
+                        }
                     } else {
                         Error(format!("identifier is not a function: '{}'", ident))
                     }
@@ -384,7 +396,11 @@ mod tests {
     fn func() {
         let input = "fn(x) { x + 2; };";
         match eval(input) {
-            Function { params, body } => {
+            Function {
+                params,
+                body,
+                env: _,
+            } => {
                 assert_eq!(params, vec!["x"]);
                 assert_eq!(body[0].to_string(), "(x + 2)");
             }
@@ -394,11 +410,30 @@ mod tests {
 
     #[test]
     fn fn_call() {
+        let inputs = [
+            "let id = fn(x) { x; }; id(20);",
+            "let id = fn(x) { return x; }; id(20);",
+            "let double = fn(x) { return x * 2; }; double(10);",
+            "let add = fn(x, y) { return x + y; }; add(10, 10);",
+            "let add = fn(x, y) { return x + y; }; add(5, 5) + add(5, 5);",
+        ];
+
+        for input in inputs {
+            assert_eq!(eval(input), Int(20), "{}", input);
+        }
+    }
+
+    #[test]
+    fn closure() {
         let input = r#"
-            let y = 1;
-            let add = fn(x) { return x + y; }; 
-            add(1);
+            let create_adder = fn(x) { 
+                fn(y) { x + y }; 
+            };
+
+            let add2 = create_adder(2);
+            add2(2);
         "#;
-        assert_eq!(eval(input), Int(2));
+
+        assert_eq!(eval(input), Int(4));
     }
 }

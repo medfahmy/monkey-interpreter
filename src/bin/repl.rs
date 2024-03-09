@@ -20,6 +20,7 @@ fn main() {
         let errors = program.errors();
 
         if errors.is_empty() {
+            // println!("{:?}", program.stmts());
             println!("{}", program.eval(&mut env));
         } else {
             println!("parser errors: ");
@@ -27,8 +28,8 @@ fn main() {
             for error in errors {
                 println!("- {}", error);
             }
-
-            println!();
         }
+
+        println!();
     }
 }
