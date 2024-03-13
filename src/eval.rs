@@ -7,7 +7,7 @@ pub struct Env {
     outer: Option<Box<Env>>,
 }
 
-impl Env {
+impl Env<> {
     pub fn new() -> Self {
         Self {
             bindings: HashMap::new(),
@@ -15,7 +15,7 @@ impl Env {
         }
     }
 
-    fn extend(&self) -> Self {
+    fn extend(& self) -> Self {
         Self {
             bindings: HashMap::new(),
             outer: Some(Box::new(self.clone())),
@@ -36,7 +36,7 @@ impl Env {
         }
     }
 
-    fn set(&mut self, ident: String, obj: Object) -> Object {
+    fn set(& mut self, ident: String, obj: Object) -> Object {
         self.bindings.insert(ident, obj.clone());
         obj
     }
@@ -59,7 +59,7 @@ pub enum Object {
 use Object::*;
 
 impl std::fmt::Display for Object {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let output = match self {
             Int(n) => n.to_string(),
             Bool(b) => b.to_string(),
@@ -87,11 +87,11 @@ impl std::fmt::Display for Object {
 }
 
 pub trait Eval {
-    fn eval<'a>(&'a self, env: &'a mut Env) -> Object;
+    fn eval(& self, env: & mut Env) -> Object;
 }
 
 impl Eval for Program {
-    fn eval<'a>(&'a self, env: &'a mut Env) -> Object {
+    fn eval(& self, env: & mut Env) -> Object {
         if self.stmts().is_empty() || !self.errors().is_empty() {
             return Nil;
         }
@@ -117,7 +117,7 @@ impl Eval for Program {
 }
 
 impl Eval for Vec<Stmt> {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval(& self, env: & mut Env) -> Object {
         let mut value = Nil;
 
         for stmt in self {
@@ -134,7 +134,7 @@ impl Eval for Vec<Stmt> {
 }
 
 impl Eval for Stmt {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval(& self, env: & mut Env) -> Object {
         match self {
             Self::Expr(expr) => expr.eval(env),
             Self::Ret(expr) => match expr.eval(env) {
@@ -151,7 +151,7 @@ impl Eval for Stmt {
 }
 
 impl Eval for Expr {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval(& self, env: & mut Env) -> Object {
         match self {
             Self::Int(n) => Int(*n),
             Self::Bool(b) => Bool(*b),
@@ -430,8 +430,8 @@ mod tests {
                 fn(y) { x + y }; 
             };
 
-            let add2 = create_adder(2);
-            add2(2);
+            let add_two = create_adder(2);
+            add_two(2);
         "#;
 
         assert_eq!(eval(input), Int(4));
