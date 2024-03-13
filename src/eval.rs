@@ -7,7 +7,7 @@ pub struct Env {
     outer: Option<Box<Env>>,
 }
 
-impl Env<> {
+impl Env {
     pub fn new() -> Self {
         Self {
             bindings: HashMap::new(),
@@ -15,7 +15,7 @@ impl Env<> {
         }
     }
 
-    fn extend(& self) -> Self {
+    fn extend(&self) -> Self {
         Self {
             bindings: HashMap::new(),
             outer: Some(Box::new(self.clone())),
@@ -23,20 +23,10 @@ impl Env<> {
     }
 
     fn get(&self, ident: &String) -> Option<Object> {
-        let obj = self.bindings.get(ident).cloned();
-
-        if obj.is_some() {
-            return obj;
-        }
-
-        if let Some(outer) = self.outer.clone() {
-            outer.get(ident)
-        } else {
-            None
-        }
+        self.bindings.get(ident).cloned()
     }
 
-    fn set(& mut self, ident: String, obj: Object) -> Object {
+    fn set(&mut self, ident: String, obj: Object) -> Object {
         self.bindings.insert(ident, obj.clone());
         obj
     }
@@ -52,7 +42,7 @@ pub enum Object {
     Function {
         params: Vec<String>,
         body: Vec<Stmt>,
-        env: Box<Env>,
+        local_env: Env,
     },
 }
 
@@ -67,7 +57,7 @@ impl std::fmt::Display for Object {
             Function {
                 params,
                 body,
-                env: _,
+                local_env: _,
             } => {
                 format!(
                     "fn({}) {{\n\t {}\n}}",
@@ -87,11 +77,11 @@ impl std::fmt::Display for Object {
 }
 
 pub trait Eval {
-    fn eval(& self, env: & mut Env) -> Object;
+    fn eval(&self, env: &mut Env) -> Object;
 }
 
 impl Eval for Program {
-    fn eval(& self, env: & mut Env) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         if self.stmts().is_empty() || !self.errors().is_empty() {
             return Nil;
         }
@@ -117,7 +107,7 @@ impl Eval for Program {
 }
 
 impl Eval for Vec<Stmt> {
-    fn eval(& self, env: & mut Env) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         let mut value = Nil;
 
         for stmt in self {
@@ -134,7 +124,7 @@ impl Eval for Vec<Stmt> {
 }
 
 impl Eval for Stmt {
-    fn eval(& self, env: & mut Env) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         match self {
             Self::Expr(expr) => expr.eval(env),
             Self::Ret(expr) => match expr.eval(env) {
@@ -151,7 +141,7 @@ impl Eval for Stmt {
 }
 
 impl Eval for Expr {
-    fn eval(& self, env: & mut Env) -> Object {
+    fn eval(&self, env: &mut Env) -> Object {
         match self {
             Self::Int(n) => Int(*n),
             Self::Bool(b) => Bool(*b),
@@ -206,21 +196,24 @@ impl Eval for Expr {
                 if let Some(value) = env.get(ident) {
                     value.clone()
                 } else {
+                    // println!("{:?}", env);
                     Error(format!("identifier not found: '{}'", ident))
                 }
             }
             Self::Fn { params, body } => {
-                let function = Function {
+                let func = Function {
                     params: params.clone(),
                     body: body.clone(),
-                    env: Box::new(env.clone()),
+                    local_env: env.clone(),
                 };
 
-                function
+                // println!("{:?}", func);
+
+                func
             }
             Self::FnCall { ident, args } => {
                 if let Some(obj) = env.get(ident) {
-                    if let Function { params, body, env } = obj {
+                    if let Function { params, body, local_env } = obj {
                         if args.len() != params.len() {
                             return Error(format!(
                                 "function '{}' expected {} parameters, got {}",
@@ -230,7 +223,7 @@ impl Eval for Expr {
                             ));
                         }
 
-                        let mut local_env = env.extend();
+                        let mut local_env = local_env;
                         let mut values = Vec::new();
 
                         for arg in args {
@@ -243,6 +236,8 @@ impl Eval for Expr {
                         for i in 0..args.len() {
                             local_env.set(params[i].clone(), values[i].clone());
                         }
+
+                        println!("{:?}", local_env);
 
                         match body.eval(&mut local_env) {
                             Return(obj) => *obj,
@@ -399,7 +394,7 @@ mod tests {
             Function {
                 params,
                 body,
-                env: _,
+                local_env: _,
             } => {
                 assert_eq!(params, vec!["x"]);
                 assert_eq!(body[0].to_string(), "(x + 2)");

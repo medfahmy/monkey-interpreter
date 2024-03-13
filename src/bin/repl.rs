@@ -2,6 +2,10 @@ use monkey::{Env, Eval, Parser};
 use std::io::{stdin, stdout, Write};
 
 fn main() {
+    repl();
+}
+
+fn repl() {
     let stdin = stdin();
     let mut stdout = stdout();
     let mut env = Env::new();
