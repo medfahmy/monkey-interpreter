@@ -1,87 +1,20 @@
+mod env;
+mod obj;
+
+pub use env::Env;
+pub use obj::Obj;
+use obj::Obj::*;
+
 use crate::parser::{Expr, Program, Stmt, Token};
-use std::collections::HashMap;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Env {
-    bindings: HashMap<String, Object>,
-    outer: Option<Box<Env>>,
-}
-
-impl Env {
-    pub fn new() -> Self {
-        Self {
-            bindings: HashMap::new(),
-            outer: None,
-        }
-    }
-
-    fn extend(&self) -> Self {
-        Self {
-            bindings: HashMap::new(),
-            outer: Some(Box::new(self.clone())),
-        }
-    }
-
-    fn get(&self, ident: &String) -> Option<Object> {
-        self.bindings.get(ident).cloned()
-    }
-
-    fn set(&mut self, ident: String, obj: Object) -> Object {
-        self.bindings.insert(ident, obj.clone());
-        obj
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Object {
-    Int(i64),
-    Bool(bool),
-    Return(Box<Object>),
-    Nil,
-    Error(String),
-    Function {
-        params: Vec<String>,
-        body: Vec<Stmt>,
-        local_env: Env,
-    },
-}
-
-use Object::*;
-
-impl std::fmt::Display for Object {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let output = match self {
-            Int(n) => n.to_string(),
-            Bool(b) => b.to_string(),
-            Return(value) => value.to_string(),
-            Function {
-                params,
-                body,
-                local_env: _,
-            } => {
-                format!(
-                    "fn({}) {{\n\t {}\n}}",
-                    params.join(", "),
-                    body.iter()
-                        .map(|arg| arg.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n\t")
-                )
-            }
-            Error(s) => s.clone(),
-            Nil => "Nil".to_string(),
-        };
-
-        writeln!(f, "{}", output)
-    }
-}
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub trait Eval {
-    fn eval(&self, env: &mut Env) -> Object;
+    fn eval(&self, env: &Rc<RefCell<Env>>) -> Obj;
 }
 
 impl Eval for Program {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval(&self, env: &Rc<RefCell<Env>>) -> Obj {
         if self.stmts().is_empty() || !self.errors().is_empty() {
             return Nil;
         }
@@ -91,13 +24,9 @@ impl Eval for Program {
         for stmt in self.stmts() {
             value = stmt.eval(env);
 
-            if let Return(obj) = value {
-                return *obj;
-            }
-
             match value {
                 Return(obj) => return *obj,
-                Error(_) => return value,
+                Error(s) => return Error(s),
                 _ => {}
             }
         }
@@ -107,7 +36,7 @@ impl Eval for Program {
 }
 
 impl Eval for Vec<Stmt> {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval(&self, env: &Rc<RefCell<Env>>) -> Obj {
         let mut value = Nil;
 
         for stmt in self {
@@ -124,7 +53,7 @@ impl Eval for Vec<Stmt> {
 }
 
 impl Eval for Stmt {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval(&self, env: &Rc<RefCell<Env>>) -> Obj {
         match self {
             Self::Expr(expr) => expr.eval(env),
             Self::Ret(expr) => match expr.eval(env) {
@@ -133,7 +62,10 @@ impl Eval for Stmt {
             },
             Self::Let { ident, expr } => match expr.eval(env) {
                 Error(s) => Error(s),
-                value => env.set(ident.to_string(), value),
+                value => {
+                    env.borrow_mut().set(ident.to_string(), value.clone());
+                    value
+                }
             },
             _ => unimplemented!(),
         }
@@ -141,7 +73,7 @@ impl Eval for Stmt {
 }
 
 impl Eval for Expr {
-    fn eval(&self, env: &mut Env) -> Object {
+    fn eval(&self, env: &Rc<RefCell<Env>>) -> Obj {
         match self {
             Self::Int(n) => Int(*n),
             Self::Bool(b) => Bool(*b),
@@ -192,28 +124,26 @@ impl Eval for Expr {
                 }
                 _ => unreachable!(),
             },
-            Self::Ident(ident) => {
-                if let Some(value) = env.get(ident) {
-                    value.clone()
-                } else {
-                    // println!("{:?}", env);
-                    Error(format!("identifier not found: '{}'", ident))
-                }
-            }
+            Self::Ident(ident) => match env.borrow().get(&ident) {
+                Some(value) => value.clone(),
+                None => Error(format!("identifier not found: '{}'", ident)),
+            },
             Self::Fn { params, body } => {
                 let func = Function {
                     params: params.clone(),
                     body: body.clone(),
-                    local_env: env.clone(),
+                    outer_env: Rc::clone(&env),
                 };
-
-                // println!("{:?}", func);
 
                 func
             }
-            Self::FnCall { ident, args } => {
-                if let Some(obj) = env.get(ident) {
-                    if let Function { params, body, local_env } = obj {
+            Self::FnCall { ident, args } => match env.borrow().get(&ident) {
+                Some(obj) => match obj {
+                    Function {
+                        params,
+                        body,
+                        outer_env,
+                    } => {
                         if args.len() != params.len() {
                             return Error(format!(
                                 "function '{}' expected {} parameters, got {}",
@@ -223,33 +153,25 @@ impl Eval for Expr {
                             ));
                         }
 
-                        let mut local_env = local_env;
-                        let mut values = Vec::new();
+                        let local_env = Env::extend(&outer_env);
+                        let zip = params.iter().zip(args.iter());
 
-                        for arg in args {
-                            match arg.eval(&mut local_env) {
+                        for (param, arg) in zip {
+                            match arg.eval(&env) {
                                 Error(s) => return Error(s),
-                                obj => values.push(obj),
+                                obj => local_env.borrow_mut().set(param.clone(), obj),
                             }
                         }
 
-                        for i in 0..args.len() {
-                            local_env.set(params[i].clone(), values[i].clone());
-                        }
-
-                        println!("{:?}", local_env);
-
-                        match body.eval(&mut local_env) {
+                        match body.eval(&local_env) {
                             Return(obj) => *obj,
                             obj => obj,
                         }
-                    } else {
-                        Error(format!("identifier is not a function: '{}'", ident))
                     }
-                } else {
-                    Error(format!("identifier not found: '{}'", ident))
-                }
-            }
+                    _ => Error(format!("identifier is not a function: '{}'", ident)),
+                },
+                None => Error(format!("identifier not found: '{}'", ident)),
+            },
         }
     }
 }
@@ -259,10 +181,10 @@ mod tests {
     use super::*;
     use crate::Parser;
 
-    fn eval(input: &str) -> Object {
+    fn eval(input: &str) -> Obj {
         let program = Parser::parse(input);
-        let mut env = Env::new();
-        program.eval(&mut env)
+        let env = Env::new();
+        program.eval(&env)
     }
 
     #[test]
@@ -391,11 +313,7 @@ mod tests {
     fn func() {
         let input = "fn(x) { x + 2; };";
         match eval(input) {
-            Function {
-                params,
-                body,
-                local_env: _,
-            } => {
+            Function { params, body, .. } => {
                 assert_eq!(params, vec!["x"]);
                 assert_eq!(body[0].to_string(), "(x + 2)");
             }
@@ -430,5 +348,16 @@ mod tests {
         "#;
 
         assert_eq!(eval(input), Int(4));
+    }
+
+    #[test]
+    fn func_env() {
+        let input = r#"
+            let add = fn(x, y) { x + y };
+            let apply = fn(f, x, y) { f(x, y) };
+            apply(add, 1, 2) 
+        "#;
+
+        assert_eq!(eval(input), Int(3));
     }
 }
