@@ -154,6 +154,7 @@ impl Parser {
 
     fn prefix_parse(&mut self) -> Option<Expr> {
         match self.curr_token.clone() {
+            Token::Str(s) => Some(Expr::Str(s.to_string())),
             Token::Ident(ident) => {
                 if self.peek_token == Token::Lparen {
                     self.next_token();

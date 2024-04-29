@@ -77,6 +77,7 @@ impl Eval for Expr {
         match self {
             Self::Int(n) => Int(*n),
             Self::Bool(b) => Bool(*b),
+            Self::Str(s) => Str(s.to_string()),
             Self::Prefix { op, expr } => match expr.eval(env) {
                 Error(s) => Error(s),
                 Bool(b) => match op {
@@ -92,14 +93,18 @@ impl Eval for Expr {
                 _ => unreachable!(),
             },
             Self::Infix { op, left, right } => match (left.eval(env), right.eval(env)) {
-                (Error(s), _) => Error(s),
-                (_, Error(s)) => Error(s),
+                (Error(s), _) | (_, Error(s)) => Error(s),
+
+                // (_, Error(s)) => Error(s),
+
                 (Bool(_), Bool(_)) => {
                     Error(format!("unknown operator: Bool {} Bool", op.to_string()))
                 }
+
                 (Bool(_), _) | (_, Bool(_)) => {
                     Error(format!("type mismatch: Int {} Bool", op.to_string()))
                 }
+
                 (Int(x), Int(y)) => match op {
                     Token::Add => Int(x + y),
                     Token::Sub => Int(x - y),
@@ -111,6 +116,16 @@ impl Eval for Expr {
                     Token::Gt => Bool(x > y),
                     _ => unreachable!(),
                 },
+
+                (Str(s), Str(t)) => match op {
+                    Token::Add => {
+                        let mut u = s.clone();
+                        u.push_str(&t);
+                        Str(u)
+                    }
+                    _ => unreachable!(),
+                }
+
                 _ => unreachable!(),
             },
             Self::If { cond, csq, alt } => match cond.eval(env) {
@@ -188,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn int() {
+    fn eval_int() {
         let inputs = [
             "4",
             "10",
@@ -213,6 +228,16 @@ mod tests {
 
         for i in 0..2 {
             assert_eq!(eval(inputs[i]), Bool(outputs[i]));
+        }
+    }
+
+    #[test]
+    fn eval_str() {
+        let inputs = ["\"hello\"", "\"\"", "\"hello\" + \" \" + \"world\""];
+        let outputs = ["hello", "", "hello world"];
+
+        for i in 0..2 {
+            assert_eq!(eval(inputs[i]), Str(outputs[i].to_string()));
         }
     }
 

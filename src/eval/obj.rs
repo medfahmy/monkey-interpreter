@@ -7,6 +7,7 @@ use std::rc::Rc;
 pub enum Obj {
     Int(i64),
     Bool(bool),
+    Str(String),
     Return(Box<Obj>),
     Nil,
     Error(String),
@@ -22,6 +23,7 @@ impl std::fmt::Display for Obj {
         let output = match self {
             Obj::Int(n) => n.to_string(),
             Obj::Bool(b) => b.to_string(),
+            Obj::Str(s) => s.to_string(),
             Obj::Return(value) => value.to_string(),
             Obj::Function { params, .. } => format!("Fn({})", params.join(", ")),
             Obj::Error(s) => s.clone(),

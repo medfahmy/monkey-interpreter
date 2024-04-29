@@ -1,4 +1,4 @@
-use super::token::Token;
+use super::token::{Token, Token::*};
 
 #[derive(Debug)]
 pub struct Lexer {
@@ -24,7 +24,6 @@ impl Lexer {
     pub fn next(&mut self) -> Token {
         self.skip_whitespace();
 
-        use Token::*;
 
         let token = match self.curr {
             '\0' => Eof,
@@ -44,7 +43,6 @@ impl Lexer {
                     Bang
                 }
             }
-            // '+' => Plus,
             '+' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -85,6 +83,9 @@ impl Lexer {
             ',' => Comma,
             '<' => Lt,
             '>' => Gt,
+            '"' => {
+                return self.read_str();
+            },
             _ => {
                 if self.curr.is_alphabetic() || self.curr == '_' {
                     return self.read_ident();
@@ -104,7 +105,7 @@ impl Lexer {
         if self.peek_pos >= self.input.len() {
             self.curr = '\0';
         } else {
-            // todo: handle error
+            // TODO: handle error
             self.curr = self.input.chars().nth(self.peek_pos).unwrap();
         }
 
@@ -112,16 +113,29 @@ impl Lexer {
         self.peek_pos += 1;
     }
 
+    fn read_str(&mut self) -> Token {
+        self.read_char();
+        let pos = self.curr_pos;
+
+        while self.curr != '"' && self.curr != '\0' {
+            self.read_char();
+        }
+
+        let s = &self.input[pos..self.curr_pos];
+        let token = Str(s.to_string());
+        self.read_char();
+
+        token
+    }
+
     fn read_ident(&mut self) -> Token {
-        let position = self.curr_pos;
+        let pos = self.curr_pos;
 
         while self.curr.is_alphabetic() || self.curr == '_' {
             self.read_char();
         }
 
-        let s = &self.input[position..self.curr_pos];
-
-        use Token::*;
+        let s = &self.input[pos..self.curr_pos];
 
         match s {
             "let" => Let,
@@ -187,6 +201,21 @@ mod tests {
             Lbrace,
             Rbrace,
             Comma,
+            Semicolon,
+            Eof,
+        ];
+
+        lex_test(input, tokens);
+    }
+
+    #[test]
+    fn str() {
+        let input = r#"let x = "hello";"#;
+        let tokens = vec![
+            Let,
+            Ident("x".to_string()),
+            Assign('\0'),
+            Str("hello".to_string()),
             Semicolon,
             Eof,
         ];

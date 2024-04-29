@@ -1,5 +1,9 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    Ident(String),
+    Int(String),
+    Str(String),
+    Assign(char),
     Let,
     Fn,
     If,
@@ -7,9 +11,6 @@ pub enum Token {
     Return,
     True,
     False,
-    Ident(String),
-    Int(String),
-    Assign(char),
     Add,
     Sub,
     Mul,
@@ -43,6 +44,7 @@ impl ToString for Token {
             False => "false",
             Ident(s) => s,
             Int(s) => s,
+            Str(s) => s,
             Assign(op) => match op {
                 '\0' => "=",
                 '+' => "+=",

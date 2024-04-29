@@ -73,9 +73,10 @@ impl ToString for Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Ident(String),
     Int(i64),
     Bool(bool),
+    Str(String),
+    Ident(String),
     Prefix {
         op: Token,
         expr: Box<Expr>,
@@ -104,6 +105,7 @@ impl ToString for Expr {
     fn to_string(&self) -> String {
         match self {
             Self::Ident(name) => name.to_string(),
+            Self::Str(s) => s.to_string(),
             Self::Int(n) => n.to_string(),
             Self::Prefix { op, expr: value } => {
                 format!("({}{})", op.to_string(), value.to_string())
