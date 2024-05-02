@@ -26,6 +26,8 @@ pub enum Token {
     Rparen,
     Lbrace,
     Rbrace,
+    Lbracket,
+    Rbracket,
     Illegal,
     Eof,
 }
@@ -68,6 +70,8 @@ impl ToString for Token {
             Rparen => ")",
             Lbrace => "{",
             Rbrace => "}",
+            Lbracket => "[",
+            Rbracket => "]",
             Eof => "",
             Illegal => "",
         };

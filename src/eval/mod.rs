@@ -2,8 +2,8 @@ mod env;
 mod obj;
 
 pub use env::Env;
-pub use obj::Obj;
 use obj::Obj::*;
+pub use obj::Obj;
 
 use crate::parser::{Expr, Program, Stmt, Token};
 use std::cell::RefCell;
@@ -96,7 +96,6 @@ impl Eval for Expr {
                 (Error(s), _) | (_, Error(s)) => Error(s),
 
                 // (_, Error(s)) => Error(s),
-
                 (Bool(_), Bool(_)) => {
                     Error(format!("unknown operator: Bool {} Bool", op.to_string()))
                 }
@@ -123,8 +122,8 @@ impl Eval for Expr {
                         u.push_str(&t);
                         Str(u)
                     }
-                    _ => unreachable!(),
-                }
+                    _ => Error(format!("unknown operator: {} {} {}", s, op.to_string(), t)),
+                },
 
                 _ => unreachable!(),
             },
@@ -152,41 +151,57 @@ impl Eval for Expr {
 
                 func
             }
-            Self::FnCall { ident, args } => match env.borrow().get(&ident) {
-                Some(obj) => match obj {
-                    Function {
-                        params,
-                        body,
-                        outer_env,
-                    } => {
-                        if args.len() != params.len() {
-                            return Error(format!(
-                                "function '{}' expected {} parameters, got {}",
-                                ident,
-                                params.len(),
-                                args.len()
-                            ));
-                        }
-
-                        let local_env = Env::extend(&outer_env);
-                        let zip = params.iter().zip(args.iter());
-
-                        for (param, arg) in zip {
-                            match arg.eval(&env) {
-                                Error(s) => return Error(s),
-                                obj => local_env.borrow_mut().set(param.clone(), obj),
-                            }
-                        }
-
-                        match body.eval(&local_env) {
-                            Return(obj) => *obj,
-                            obj => obj,
-                        }
+            Self::FnCall { ident, args } => {
+                if ident == "len" {
+                    if args.len() != 1 {
+                        return Error(format!(
+                            "wrong number of arguments, got={}, want=1",
+                            args.len()
+                        ));
                     }
-                    _ => Error(format!("identifier is not a function: '{}'", ident)),
-                },
-                None => Error(format!("identifier not found: '{}'", ident)),
-            },
+
+                    match &args[0].eval(env) {
+                        Obj::Str(s) => Int(s.len() as i64),
+                        expr => Error(format!("argument to `len` not supported, got {:?}", expr)),
+                    }
+                } else {
+                    match env.borrow().get(&ident) {
+                        Some(obj) => match obj {
+                            Function {
+                                params,
+                                body,
+                                outer_env,
+                            } => {
+                                if args.len() != params.len() {
+                                    return Error(format!(
+                                        "function '{}' expected {} parameters, got {}",
+                                        ident,
+                                        params.len(),
+                                        args.len()
+                                    ));
+                                }
+
+                                let local_env = Env::extend(&outer_env);
+                                let zip = params.iter().zip(args.iter());
+
+                                for (param, arg) in zip {
+                                    match arg.eval(&env) {
+                                        Error(s) => return Error(s),
+                                        obj => local_env.borrow_mut().set(param.clone(), obj),
+                                    }
+                                }
+
+                                match body.eval(&local_env) {
+                                    Return(obj) => *obj,
+                                    obj => obj,
+                                }
+                            }
+                            _ => Error(format!("identifier is not a function: '{}'", ident)),
+                        },
+                        None => Error(format!("function not found: '{}'", ident)),
+                    }
+                }
+            }
         }
     }
 }
@@ -203,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_int() {
+    fn int() {
         let inputs = [
             "4",
             "10",
@@ -232,13 +247,37 @@ mod tests {
     }
 
     #[test]
-    fn eval_str() {
+    fn str() {
         let inputs = ["\"hello\"", "\"\"", "\"hello\" + \" \" + \"world\""];
         let outputs = ["hello", "", "hello world"];
 
         for i in 0..2 {
             assert_eq!(eval(inputs[i]), Str(outputs[i].to_string()));
         }
+    }
+
+    #[test]
+    fn len() {
+        let inputs = [
+            "len(\"hello\")",
+            "len(\"hello\" + \" \" + \"world\")",
+            "len(\"\")",
+            "len(\"    \")",
+        ];
+        let outputs = [5, 11, 0, 4];
+
+        for i in 0..2 {
+            assert_eq!(eval(inputs[i]), Int(outputs[i]));
+        }
+
+        assert_eq!(
+            eval("len(1)"),
+            Error("argument to `len` not supported, got Int(1)".into())
+        );
+        assert_eq!(
+            eval("len(\"one\", \"two\")"),
+            Error("wrong number of arguments, got=2, want=1".into())
+        );
     }
 
     #[test]

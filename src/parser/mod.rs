@@ -197,8 +197,8 @@ impl Parser {
                 if let Token::Lbrace = self.curr_token {
                     self.next_token();
                     let csq = self.parse_block_stmt();
-                    self.next_token();
 
+                    self.next_token();
                     let mut alt = Vec::new();
 
                     if let Token::Else = self.curr_token {
@@ -373,14 +373,10 @@ impl Parser {
 
     fn check_prec(token: &Token) -> usize {
         match token {
-            Token::Eq => 1,
-            Token::NotEq => 1,
-            Token::Lt => 2,
-            Token::Gt => 2,
-            Token::Add => 3,
-            Token::Sub => 3,
-            Token::Mul => 4,
-            Token::Div => 4,
+            Token::Eq | Token::NotEq => 1,
+            Token::Lt | Token::Gt => 2,
+            Token::Add | Token::Sub => 3,
+            Token::Mul | Token::Div => 4,
             _ => 0,
         }
     }
